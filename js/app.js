@@ -564,6 +564,158 @@
     ]);
   }
 
+  /* ---------------------------------------------------- adding items */
+
+  /*
+   * Adds lines to a list one at a time. A line whose item is already on the
+   * list stops the run and asks what to do with it; the rest continue once
+   * that is answered. Items are added as we go, so a duplicate inside the
+   * same paste is caught too.
+   */
+  function addLines(listId, lines) {
+    var queue = lines.map(function (line) { return line; }).filter(Boolean);
+    var tally = { added: 0, replaced: 0, skipped: 0, conflictsSeen: 0,
+                  total: queue.length, lastItem: null };
+    var conflicts = countConflicts(listId, queue);
+    step(0);
+
+    function step(index) {
+      while (index < queue.length) {
+        var line = queue[index];
+        var parsed = store.parseLine(line);
+        if (!parsed.name) { index++; continue; }
+
+        var existing = store.findSimilar(listId, parsed.name);
+        if (existing) {
+          conflictDialog({
+            listId: listId,
+            line: line,
+            parsed: parsed,
+            existing: existing,
+            position: tally.conflictsSeen + 1,
+            total: conflicts,
+            onDone: function () { step(index + 1); }
+          }, tally);
+          return;
+        }
+        tally.lastItem = store.addItem(listId, line);
+        if (tally.lastItem) tally.added++;
+        index++;
+      }
+      report(tally);
+    }
+  }
+
+  /* How many of these lines clash with what is already there (for "2 of 3"). */
+  function countConflicts(listId, lines) {
+    var names = [];
+    var count = 0;
+    lines.forEach(function (line) {
+      var parsed = store.parseLine(line);
+      if (!parsed.name) return;
+      var clash = !!store.findSimilar(listId, parsed.name) ||
+        names.some(function (seen) { return store.sameItemName(seen, parsed.name); });
+      if (clash) count++;
+      else names.push(parsed.name);
+    });
+    return count;
+  }
+
+  /* One toast for the whole run. */
+  function report(tally) {
+    if (tally.total === 1) {
+      if (tally.replaced) { undoable(t('dupe.replaced')); return; }
+      if (tally.skipped) { toast(t('dupe.skipped')); return; }
+      if (tally.added && tally.lastItem) {
+        var category = cats.get(tally.lastItem.category);
+        toast(t('add.addedTo', { category: category.icon + ' ' + cats.label(category.id) }));
+      }
+      return;
+    }
+    var parts = [];
+    if (tally.added) parts.push(t('add.summaryAdded', { n: tally.added }));
+    if (tally.replaced) parts.push(t('add.summaryReplaced', { n: tally.replaced }));
+    if (tally.skipped) parts.push(t('add.summarySkipped', { n: tally.skipped }));
+    if (parts.length) toast(parts.join(' · '));
+  }
+
+  /* The two items side by side, so the choice is made on what is actually there. */
+  function itemPreview(labelKey, name, qty, categoryId, packedNote) {
+    var category = cats.get(categoryId);
+    var meta = [category.icon + ' ' + cats.label(category.id)];
+    if (qty > 1) meta.push(t('dupe.qty', { n: qty }));
+    if (packedNote) meta.push(packedNote);
+    return h('div', { class: 'compare__card' }, [
+      h('div', { class: 'compare__label', text: t(labelKey) }),
+      h('div', { class: 'compare__name', text: name, dir: 'auto' }),
+      h('div', { class: 'compare__meta', text: meta.join(' · ') })
+    ]);
+  }
+
+  function conflictDialog(conflict, tally) {
+    var existing = conflict.existing;
+    var parsed = conflict.parsed;
+    var answered = false;
+
+    function choose(action) {
+      answered = true;
+      tally.conflictsSeen++;
+      if (action === 'add') {
+        tally.lastItem = store.addItem(conflict.listId, conflict.line);
+        if (tally.lastItem) tally.added++;
+      } else if (action === 'replace') {
+        store.replaceItem(conflict.listId, existing.id, conflict.line);
+        tally.replaced++;
+      } else {
+        tally.skipped++;
+      }
+      closeDialog();
+      setTimeout(conflict.onDone, 10);
+    }
+
+    var newCategory = cats.categorize(parsed.name, store.getState().learned);
+
+    var body = h('div', {}, [
+      h('div', { class: 'compare' }, [
+        itemPreview('dupe.existing', existing.name, existing.qty, existing.category,
+          t(existing.packed ? 'dupe.packed' : 'dupe.notPacked')),
+        h('div', { class: 'compare__arrow', 'aria-hidden': 'true', text: '↓' }),
+        itemPreview('dupe.new', parsed.name, parsed.qty, newCategory, null)
+      ]),
+      h('div', { class: 'menu' }, [
+        choiceRow('➕', 'dupe.add', 'dupe.addDesc', function () { choose('add'); }),
+        choiceRow('🔄', 'dupe.replace', 'dupe.replaceDesc', function () { choose('replace'); }),
+        choiceRow('🚫', 'dupe.skip', 'dupe.skipDesc', function () { choose('skip'); })
+      ])
+    ]);
+
+    openDialog({
+      title: conflict.total > 1
+        ? t('dupe.titleCounted', { index: conflict.position, total: conflict.total })
+        : t('dupe.title'),
+      body: body,
+      /* Dismissing the dialog is the safe answer: do not add, carry on. */
+      onClose: function () {
+        if (answered) return;
+        tally.conflictsSeen++;
+        tally.skipped++;
+        setTimeout(conflict.onDone, 10);
+      }
+    });
+  }
+
+  function choiceRow(icon, labelKey, descKey, onClick) {
+    return h('button', {
+      class: 'menu__item menu__item--stack', type: 'button', onclick: onClick
+    }, [
+      h('span', { class: 'menu__icon', text: icon, 'aria-hidden': 'true' }),
+      h('span', { class: 'menu__body' }, [
+        h('span', { text: t(labelKey) }),
+        h('span', { class: 'menu__desc', text: t(descKey) })
+      ])
+    ]);
+  }
+
   /* ------------------------------------------------------------- dialogs */
 
   function newListDialog() {
@@ -883,8 +1035,8 @@
             var lines = area.value.split('\n').map(function (l) { return l.trim(); })
               .filter(Boolean);
             if (!lines.length) return false;
-            var added = store.addItems(listId, lines);
-            toast(t('bulk.added', { count: plural(added.length, 'item') }));
+            closeDialog();
+            setTimeout(function () { addLines(listId, lines); }, 10);
           }
         }
       ]
@@ -1058,15 +1210,9 @@
       if (!value || ui.route.view !== 'list') return;
       /* several items at once if the text was pasted with commas or newlines */
       var lines = value.split(/[\n,]+/).map(function (l) { return l.trim(); }).filter(Boolean);
-      var added = store.addItems(ui.route.listId, lines);
       input.value = '';
       input.focus();
-      if (added.length === 1) {
-        var category = cats.get(added[0].category);
-        toast(t('add.addedTo', { category: category.icon + ' ' + cats.label(category.id) }));
-      } else if (added.length > 1) {
-        toast(t('add.addedMany', { count: plural(added.length, 'item') }));
-      }
+      addLines(ui.route.listId, lines);
     });
 
     $('bulk-btn').addEventListener('click', function () {

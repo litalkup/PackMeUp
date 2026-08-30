@@ -106,6 +106,39 @@ check('item deleted', store.getList(list.id).items.some(function (i) { return i.
 check('delete can be undone', typeof store.undo(), 'string');
 check('item is back', store.getList(list.id).items.some(function (i) { return i.id === added.id; }), true);
 
+console.log('duplicate detection');
+check('same word, different case', store.sameItemName('Socks', 'socks'), true);
+check('english plural', store.sameItemName('socks', 'sock'), true);
+check('english irregular plural', store.sameItemName('batteries', 'battery'), true);
+check('hebrew plural', store.sameItemName('גרביים', 'גרב'), true);
+check('hebrew feminine plural', store.sameItemName('מגבת', 'מגבות'), true);
+check('hebrew prefix', store.sameItemName('הגרביים', 'גרביים'), true);
+check('one typo apart', store.sameItemName('sunscreen', 'sunscren'), true);
+check('quantity is not part of the name',
+  store.sameItemName(store.parseLine('3 socks').name, 'socks'), true);
+check('an extra word makes a different item', store.sameItemName('wool socks', 'socks'), false);
+check('charger is not a power bank', store.sameItemName('מטען', 'מטען נייד'), false);
+check('unrelated items', store.sameItemName('phone charger', 'power bank'), false);
+check('short words are not typo-matched', store.sameItemName('hat', 'bat'), false);
+
+var dupeList = store.createList({ name: 'dupes', templateId: 'blank' });
+store.addItem(dupeList.id, '3 socks');
+check('finds the existing item', !!store.findSimilar(dupeList.id, 'sock'), true);
+check('leaves other items alone', store.findSimilar(dupeList.id, 'tent'), null);
+
+var original = store.findSimilar(dupeList.id, 'socks');
+store.toggleItem(dupeList.id, original.id);
+store.replaceItem(dupeList.id, original.id, '7 wool socks');
+var replaced = store.getList(dupeList.id).items[0];
+check('replacing keeps the same slot', replaced.id, original.id);
+check('replacing takes the new name', replaced.name, 'wool socks');
+check('replacing takes the new quantity', replaced.qty, 7);
+check('replacing clears the tick', replaced.packed, false);
+check('replacing does not grow the list', store.getList(dupeList.id).items.length, 1);
+check('replacing is undoable', typeof store.undo(), 'string');
+check('undo restores the original item', store.getList(dupeList.id).items[0].name, 'socks');
+check('undo restores its tick', store.getList(dupeList.id).items[0].packed, true);
+
 console.log('hebrew interface');
 i18n.setLang('he');
 check('direction flips', i18n.dir(), 'rtl');

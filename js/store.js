@@ -351,6 +351,92 @@
     return item;
   }
 
+  /* --------------------------------------------------------- duplicates */
+
+  /*
+   * Two names describe the same item when their words pair up through any of
+   * the readings categories.forms() knows about (Hebrew prefixes and plurals,
+   * English plurals), or when the whole name is one typed character away.
+   * Different word counts are left alone, so "מטען" and "מטען נייד" - charger
+   * and power bank - stay separate items.
+   */
+  function sameItemName(a, b) {
+    var textA = cat.normalize(a);
+    var textB = cat.normalize(b);
+    if (!textA || !textB) return false;
+    if (textA === textB) return true;
+
+    var wordsA = textA.split(' ');
+    var wordsB = textB.split(' ');
+    if (wordsA.length === wordsB.length) {
+      var taken = [];
+      var paired = wordsA.every(function (word) {
+        var formsA = cat.forms(word);
+        for (var i = 0; i < wordsB.length; i++) {
+          if (taken[i]) continue;
+          var formsB = cat.forms(wordsB[i]);
+          if (formsA.some(function (form) { return formsB.indexOf(form) !== -1; })) {
+            taken[i] = true;
+            return true;
+          }
+        }
+        return false;
+      });
+      if (paired) return true;
+    }
+    return withinOneEdit(textA, textB);
+  }
+
+  /* A single inserted, deleted or changed character - a mistyped "sunscren". */
+  function withinOneEdit(a, b) {
+    if (a.length < 5 || b.length < 5) return false;
+    if (Math.abs(a.length - b.length) > 1) return false;
+    if (a.charAt(0) !== b.charAt(0)) return false;
+
+    var i = 0, j = 0, edits = 0;
+    while (i < a.length && j < b.length) {
+      if (a.charAt(i) === b.charAt(j)) { i++; j++; continue; }
+      if (++edits > 1) return false;
+      if (a.length > b.length) i++;
+      else if (b.length > a.length) j++;
+      else { i++; j++; }
+    }
+    return edits + (a.length - i) + (b.length - j) <= 1;
+  }
+
+  /* The first item on the list that means the same thing, or null. */
+  function findSimilar(listId, name, exceptId) {
+    var list = getList(listId);
+    if (!list) return null;
+    for (var i = 0; i < list.items.length; i++) {
+      var item = list.items[i];
+      if (exceptId && item.id === exceptId) continue;
+      if (sameItemName(item.name, name)) return item;
+    }
+    return null;
+  }
+
+  /* Swaps a new item into an existing one's place, keeping its position. */
+  function replaceItem(listId, itemId, line) {
+    var list = getList(listId);
+    if (!list) return null;
+    var item = getItem(list, itemId);
+    if (!item) return null;
+    var parsed = parseLine(line);
+    if (!parsed.name) return null;
+
+    checkpoint('Replaced "' + item.name + '"');
+    item.name = parsed.name;
+    item.qty = parsed.qty;
+    item.category = cat.categorize(parsed.name, state.learned);
+    delete item.categoryPinned;
+    item.packed = false;
+    item.note = '';
+    touch(list);
+    commit();
+    return item;
+  }
+
   function setAllPacked(listId, packed) {
     var list = getList(listId);
     if (!list) return null;
@@ -511,6 +597,9 @@
     setItemCategory: setItemCategory,
     toggleItem: toggleItem,
     deleteItem: deleteItem,
+    findSimilar: findSimilar,
+    sameItemName: sameItemName,
+    replaceItem: replaceItem,
     setAllPacked: setAllPacked,
     removePacked: removePacked,
     recategorize: recategorize,

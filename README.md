@@ -24,6 +24,7 @@ opens in any browser on a computer. No account, no server, works with no signal.
 - **Quantities** — type `3 x socks` (or `3 socks`, or `socks x3`) and it becomes
   an item with a ×3 badge.
 - **Duplicate a list** — with or without the existing ticks.
+- **A warning before you add the same thing twice** — see below.
 - **Templates to start from** — trip abroad, reserve duty, weekend away, camping
   and hiking, beach day, business trip, gym bag, family trip with kids.
 - **Bulk add** — paste a whole list, one item per line; every line gets a category.
@@ -34,6 +35,30 @@ opens in any browser on a computer. No account, no server, works with no signal.
 - **Export and import** — move lists between devices as a `.json` backup, or
   copy a list out as plain text.
 - **Fully bilingual** — see below.
+
+## When an item is already on the list
+
+Adding something the list already has opens a prompt instead of quietly
+creating a second row. It shows the item already on the list — with its
+quantity, category and whether it is ticked off — next to the one you just
+typed, and offers three answers:
+
+- **Add it anyway** — both stay on the list, for when you really do want two.
+- **Replace the existing item** — the new one takes the old one's place and
+  keeps its position in the list, unticked. Undoable from the toast.
+- **Do not add it** — the list is left alone. Dismissing the prompt does the
+  same thing, so an accidental Escape never changes anything.
+
+Matching is about the item, not the exact string: quantities are ignored
+(`3 socks` clashes with `socks`), so are plurals in both languages
+(`socks`/`sock`, `גרביים`/`גרב`, `מגבת`/`מגבות`), Hebrew prefixes
+(`הגרביים`), and a single typo (`sunscreen` / `sunscren`). An extra word makes
+it a different item, so `wool socks` and `socks`, or `מטען` and `מטען נייד`,
+are left to stand side by side.
+
+Pasting a batch checks every line, including lines that duplicate each other,
+and asks about them one at a time — the prompt is numbered ("2 of 3") — then
+reports what happened once at the end.
 
 ## Hebrew and English
 

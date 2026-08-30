@@ -395,6 +395,33 @@
     return CATEGORY_BY_ID[id] || CATEGORY_BY_ID.misc;
   }
 
+  /*
+   * Every reading of a single word that is worth comparing against another
+   * word: Hebrew prefixes peeled off, Hebrew plural/dual endings dropped, and
+   * simple English plurals folded back. "batteries" -> battery, "הגרביים" ->
+   * גרב. Used to decide whether two item names are the same item.
+   */
+  function forms(word) {
+    var out = [];
+    function add(value) {
+      if (value && out.indexOf(value) === -1) out.push(value);
+    }
+    prefixForms(word).forEach(function (reading) {
+      add(reading);
+      add(stem(reading));
+      /* feminine singular against its plural: מגבת / מגבות, כרית / כריות */
+      if (isHebrew(reading) && reading.length > 3 && /[תה]$/.test(reading)) {
+        add(reading.slice(0, -1));
+      }
+      if (/^[a-z0-9]+$/.test(reading) && reading.length > 3) {
+        if (/ies$/.test(reading)) add(reading.slice(0, -3) + 'y');
+        if (/es$/.test(reading)) add(reading.slice(0, -2));
+        if (/s$/.test(reading)) add(reading.slice(0, -1));
+      }
+    });
+    return out;
+  }
+
   /* Display name in the current language, falling back to English. */
   function label(id) {
     var category = get(id);
@@ -409,6 +436,7 @@
     label: label,
     categorize: categorize,
     normalize: normalize,
-    stem: stem
+    stem: stem,
+    forms: forms
   };
 })(window);
