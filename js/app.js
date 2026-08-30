@@ -10,6 +10,7 @@
   'use strict';
 
   var store = global.PMU.store;
+  var notes = global.PMU.notes;
   var cats = global.PMU.categories;
   var templates = global.PMU.templates;
   var i18n = global.PMU.i18n;
@@ -623,7 +624,7 @@
     function step(index) {
       while (index < queue.length) {
         var line = queue[index];
-        var parsed = store.parseLine(line);
+        var parsed = store.parseLine(store.lineText(line));
         if (!parsed.name) { index++; continue; }
 
         var existing = store.findSimilar(listId, parsed.name);
@@ -652,7 +653,7 @@
     var names = [];
     var count = 0;
     lines.forEach(function (line) {
-      var parsed = store.parseLine(line);
+      var parsed = store.parseLine(store.lineText(line));
       if (!parsed.name) return;
       var clash = !!store.findSimilar(listId, parsed.name) ||
         names.some(function (seen) { return store.sameItemName(seen, parsed.name); });
@@ -1178,10 +1179,139 @@
     });
   }
 
+  /*
+   * Bringing a list in from another app - Google Keep in particular, which has
+   * no API for personal accounts. The note arrives as text: pasted here, or
+   * handed over by Android's share sheet (see the share_target in the
+   * manifest, which opens the app with the note in the URL).
+   */
+  function noteImportDialog(prefill) {
+    var lists = store.getLists();
+    var area = h('textarea', {
+      class: 'textarea', id: 'note-area', dir: 'auto', rows: '8',
+      placeholder: t('note.placeholder')
+    });
+    area.value = prefill && prefill.text ? prefill.text : '';
+
+    var nameInput = h('input', { class: 'input', type: 'text', id: 'note-name', dir: 'auto' });
+    var targetSelect = h('select', { class: 'select' }, [
+      h('option', { value: 'new', text: t('note.newList') })
+    ].concat(lists.length ? [h('option', { value: 'existing', text: t('note.existingList') })] : []));
+
+    var listSelect = h('select', { class: 'select' }, lists.map(function (list) {
+      return h('option', { value: list.id, text: list.icon + '  ' + list.name });
+    }));
+
+    var newField = h('label', { class: 'field' }, [
+      h('span', { class: 'field__label', text: t('note.listName') }),
+      nameInput
+    ]);
+    var existingField = h('label', { class: 'field' }, [
+      h('span', { class: 'field__label', text: t('note.existingList') }),
+      listSelect
+    ]);
+    existingField.hidden = true;
+
+    var preview = h('p', { class: 'field__hint', id: 'note-preview', style: 'margin:0 0 14px' });
+
+    function readNote() {
+      return notes.parse(area.value);
+    }
+
+    function refresh() {
+      var note = readNote();
+      var packed = notes.packedCount(note.lines);
+      if (!note.lines.length) {
+        preview.textContent = t('note.previewNone');
+      } else if (packed) {
+        preview.textContent = t('note.preview', {
+          items: plural(note.lines.length, 'item'), packed: packed
+        });
+      } else {
+        preview.textContent = t('note.previewPlain', { items: plural(note.lines.length, 'item') });
+      }
+      /* A note with a heading names the new list after it. */
+      if (note.title && !nameInput.dataset.touched) nameInput.value = note.title;
+    }
+
+    area.addEventListener('input', refresh);
+    nameInput.addEventListener('input', function () { nameInput.dataset.touched = '1'; });
+    targetSelect.addEventListener('change', function () {
+      var toNew = targetSelect.value === 'new';
+      newField.hidden = !toNew;
+      existingField.hidden = toNew;
+    });
+
+    if (prefill && prefill.title) {
+      nameInput.value = prefill.title;
+      nameInput.dataset.touched = '1';
+    }
+
+    var body = h('div', {}, [
+      h('label', { class: 'field' }, [
+        h('span', { class: 'field__label', text: t('note.paste') }),
+        area,
+        h('span', { class: 'field__hint', text: t('note.hint') })
+      ]),
+      preview,
+      h('label', { class: 'field' }, [
+        h('span', { class: 'field__label', text: t('note.target') }),
+        targetSelect
+      ]),
+      newField,
+      existingField,
+      h('p', { class: 'field__hint', style: 'margin:0', text: t('note.shareHint') })
+    ]);
+
+    refresh();
+
+    openDialog({
+      title: t('note.title'),
+      body: body,
+      focus: prefill && prefill.text ? '#note-name' : '#note-area',
+      actions: [
+        { label: t('action.cancel') },
+        {
+          label: t('note.action'), variant: 'primary',
+          onClick: function () {
+            var note = readNote();
+            if (!note.lines.length) { toast(t('note.empty')); return false; }
+
+            var listId;
+            if (targetSelect.value === 'existing' && listSelect.value) {
+              listId = listSelect.value;
+            } else {
+              listId = store.createList({
+                name: nameInput.value.trim() || note.title || undefined,
+                templateId: 'blank'
+              }).id;
+            }
+            closeDialog();
+            navigate('#/list/' + listId);
+            setTimeout(function () { addLines(listId, note.lines); }, 10);
+            return false;
+          }
+        }
+      ]
+    });
+  }
+
+  /* Android hands a shared note over in the query string - see the manifest. */
+  function sharedNote() {
+    var params = new URLSearchParams(global.location.search);
+    var text = params.get('text') || '';
+    var title = params.get('title') || '';
+    if (!text && !title) return null;
+    /* Do not import the same note again on a refresh. */
+    global.history.replaceState({}, '', global.location.pathname + global.location.hash);
+    return { text: text || title, title: text ? title : '' };
+  }
+
   function appMenuDialog() {
     var theme = store.getSetting('theme') || 'system';
     var menu = h('div', { class: 'menu' }, [
       menuEntry('➕', t('menu.newList'), newListDialog),
+      menuEntry('📋', t('note.menu'), function () { noteImportDialog(null); }),
       menuEntry('📥', t('menu.import'), importDialog),
       menuEntry('💾', t('menu.exportAll'), function () { exportDialog(null); }),
       h('div', { class: 'menu__sep' }),
@@ -1336,6 +1466,9 @@
     }
     render();
     registerServiceWorker();
+
+    var shared = sharedNote();
+    if (shared) setTimeout(function () { noteImportDialog(shared); }, 60);
   }
 
   if (document.readyState === 'loading') {

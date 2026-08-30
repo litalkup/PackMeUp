@@ -28,6 +28,7 @@ opens in any browser on a computer. No account, no server, works with no signal.
 - **Templates to start from** — trip abroad, reserve duty, weekend away, camping
   and hiking, beach day, business trip, gym bag, family trip with kids.
 - **Bulk add** — paste a whole list, one item per line; every line gets a category.
+- **Bring a list in from Google Keep** — see below.
 - **Search and filter** across lists and inside a list.
 - **Works offline** — the app is cached on the device, and so is your data.
 - **Phone and desktop** — one layout that fits both, plus a dark theme and a
@@ -35,6 +36,26 @@ opens in any browser on a computer. No account, no server, works with no signal.
 - **Export and import** — move lists between devices as a `.json` backup, or
   copy a list out as plain text.
 - **Fully bilingual** — see below.
+
+## Bringing a list in from Google Keep
+
+Google Keep has no API for personal accounts — the official one is restricted
+to Google Workspace and needs a domain administrator — so a note travels as
+text. Two ways in, both under **⋯ → Import from a note**:
+
+- **Paste it.** Open the note in Keep, select everything, copy, paste. The
+  checkbox characters Keep uses (`☐`, `☑`) are recognised, along with markdown
+  checkboxes (`- [x]`) and plain bullets, and **anything already ticked in the
+  note arrives packed**. A heading line above the checklist becomes the name of
+  the new list.
+- **Share it, on Android.** The app declares a `share_target`, so once it is
+  installed from the home screen it appears in the share sheet: in Keep, ⋮ →
+  Send → PackMeUp. The note arrives in the import dialog with nothing to copy.
+  (iOS Safari has no share-target support; pasting works everywhere.)
+
+Either way the items land in a new list or an existing one, and they go through
+the usual categorisation, quantity parsing (`3 גרביים`) and duplicate prompt on
+the way in.
 
 ## Items that come in a quantity
 
@@ -160,6 +181,7 @@ consequences worth knowing:
 index.html              markup and the app shell
 css/styles.css          all styling, light and dark themes, both directions
 js/i18n.js              English and Hebrew strings, plurals, text direction
+js/notes.js             reading a note pasted or shared from another app
 js/categories.js        the categories and the keyword scoring that assigns them
 js/templates.js         the starter lists
 js/store.js             state, localStorage persistence, undo, import/export

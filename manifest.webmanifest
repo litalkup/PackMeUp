@@ -18,6 +18,11 @@
     { "src": "assets/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
     { "src": "assets/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
   ],
+  "share_target": {
+    "action": ".",
+    "method": "GET",
+    "params": { "title": "title", "text": "text", "url": "url" }
+  },
   "shortcuts": [
     { "name": "New list", "url": "./#/", "icons": [{ "src": "assets/icon-192.png", "sizes": "192x192" }] }
   ]

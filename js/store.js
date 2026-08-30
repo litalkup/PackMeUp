@@ -173,15 +173,28 @@
     list.updatedAt = now();
   }
 
+  /*
+   * A line to add is either plain text, or { text, packed } - the shape a note
+   * imported from elsewhere produces, where a ticked line is already packed.
+   */
+  function lineText(line) {
+    if (line && typeof line === 'object') return String(line.text || '');
+    return String(line == null ? '' : line);
+  }
+
+  function linePacked(line) {
+    return !!(line && typeof line === 'object' && line.packed);
+  }
+
   function makeItem(line) {
-    var parsed = parseLine(line);
+    var parsed = parseLine(lineText(line));
     if (!parsed.name) return null;
     return {
       id: uid(),
       name: parsed.name,
       qty: parsed.qty,
       category: cat.categorize(parsed.name, state.learned),
-      packedQty: 0,
+      packedQty: linePacked(line) ? parsed.qty : 0,
       note: ''
     };
   }
@@ -462,7 +475,7 @@
     if (!list) return null;
     var item = getItem(list, itemId);
     if (!item) return null;
-    var parsed = parseLine(line);
+    var parsed = parseLine(lineText(line));
     if (!parsed.name) return null;
 
     checkpoint('Replaced "' + item.name + '"');
@@ -661,6 +674,7 @@
     stats: stats,
     groupByCategory: groupByCategory,
     parseLine: parseLine,
+    lineText: lineText,
 
     setSetting: setSetting,
     getSetting: getSetting,

@@ -23,13 +23,14 @@ sandbox.localStorage = {
   removeItem: function (k) { delete storage[k]; }
 };
 vm.createContext(sandbox);
-['js/i18n.js', 'js/categories.js', 'js/templates.js', 'js/store.js'].forEach(function (file) {
+['js/i18n.js', 'js/notes.js', 'js/categories.js', 'js/templates.js', 'js/store.js'].forEach(function (file) {
   vm.runInContext(fs.readFileSync(path.join(root, file), 'utf8'), sandbox, { filename: file });
 });
 
 var cats = sandbox.PMU.categories;
 var store = sandbox.PMU.store;
 var i18n = sandbox.PMU.i18n;
+var notes = sandbox.PMU.notes;
 var templates = sandbox.PMU.templates;
 store.load();
 
@@ -156,6 +157,46 @@ store.deleteItem(list.id, added.id);
 check('item deleted', store.getList(list.id).items.some(function (i) { return i.id === added.id; }), false);
 check('delete can be undone', typeof store.undo(), 'string');
 check('item is back', store.getList(list.id).items.some(function (i) { return i.id === added.id; }), true);
+
+console.log('notes pasted or shared from elsewhere');
+var keepNote = notes.parse([
+  'רשימת מילואים',
+  '☑ דרכון',
+  '☐ 3 גרביים',
+  '  ☐ מברשת שיניים',
+  '',
+  '☑ מגבת'
+].join('\n'));
+check('a heading becomes the title', keepNote.title, 'רשימת מילואים');
+check('every line below it is an item', keepNote.lines.length, 4);
+check('ticked lines are marked packed', notes.packedCount(keepNote.lines), 2);
+check('checkbox characters are stripped', keepNote.lines[0].text, 'דרכון');
+check('indented lines come through', keepNote.lines[2].text, 'מברשת שיניים');
+check('blank lines are dropped',
+  keepNote.lines.filter(function (l) { return !l.text; }).length, 0);
+
+var markdown = notes.parse('- [x] Passport\n- [ ] 3 x socks\n* Toothbrush\n• Towel');
+check('markdown checkboxes', markdown.lines[0].text, 'Passport');
+check('markdown ticked state', markdown.lines[0].packed, true);
+check('markdown unticked state', markdown.lines[1].packed, false);
+check('bullets are stripped', markdown.lines[2].text, 'Toothbrush');
+check('bullet lines are not packed', markdown.lines[3].packed, false);
+
+var plainNote = notes.parse('Passport\nSocks\nToothbrush');
+check('a note with no markers keeps every line', plainNote.lines.length, 3);
+check('and takes no title from it', plainNote.title, null);
+check('an empty note yields nothing', notes.parse('   \n\n').lines.length, 0);
+check('one bare line is an item, not a title', notes.parse('Passport').lines.length, 1);
+
+var imported = store.createList({ name: 'from keep', templateId: 'blank' });
+store.addItems(imported.id, keepNote.lines);
+var importedItems = store.getList(imported.id).items;
+check('imported items are categorised', importedItems[0].category, 'documents');
+check('a ticked note line arrives packed', store.isPacked(importedItems[0]), true);
+check('an unticked one does not', importedItems[1].packedQty, 0);
+check('quantities survive the import', importedItems[1].qty, 3);
+check('a ticked line with a quantity arrives fully packed',
+  store.addItem(imported.id, { text: '4 גופיות', packed: true }).packedQty, 4);
 
 console.log('duplicate detection');
 check('same word, different case', store.sameItemName('Socks', 'socks'), true);
