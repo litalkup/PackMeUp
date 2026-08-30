@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PackMeUp — packing lists that sort themselves</title>
+<meta name="description" content="Packing lists for trips, reserve duty and anything else. Items sort themselves into categories, tick them off as you pack, duplicate a list for the next time. Works offline, on phone and desktop.">
+<meta name="theme-color" content="#0f8f8b" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#10161c" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="PackMeUp">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="assets/icon-180.png">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<div class="app">
+  <header class="topbar">
+    <button class="icon-btn" id="back-btn" type="button" aria-label="Back to all lists" hidden>←</button>
+    <h1 class="topbar__title">
+      <span class="topbar__logo" aria-hidden="true">🧳</span>
+      <span id="topbar-title">PackMeUp</span>
+    </h1>
+    <span class="topbar__spacer"></span>
+    <button class="icon-btn" id="theme-btn" type="button" aria-label="Switch colour theme" title="Switch colour theme">◐</button>
+    <button class="icon-btn" id="app-menu-btn" type="button" aria-label="More options" title="More options">⋯</button>
+  </header>
+
+  <!-- ------------------------------------------------------- home view -->
+  <main class="view" id="view-home">
+    <div class="toolbar">
+      <label class="search">
+        <span class="visually-hidden">Search your lists</span>
+        <input class="input" id="home-search" type="search" placeholder="Search lists and items" autocomplete="off">
+      </label>
+      <button class="btn btn--primary" id="new-list-btn" type="button">+ New list</button>
+    </div>
+
+    <div class="section-head" id="home-heading" hidden>
+      <h2>Your lists</h2>
+      <span class="count" id="home-count"></span>
+    </div>
+
+    <div class="cards" id="home-cards"></div>
+
+    <div id="home-empty" hidden></div>
+  </main>
+
+  <!-- ------------------------------------------------------- list view -->
+  <main class="view" id="view-list" hidden>
+    <section class="list-head">
+      <div class="list-head__top">
+        <span class="list-head__icon" id="list-icon" aria-hidden="true">🧳</span>
+        <div class="list-head__text">
+          <h2 class="list-head__name" id="list-name" dir="auto">List</h2>
+          <p class="list-head__sub" id="list-sub"></p>
+        </div>
+        <span class="list-head__pct" id="list-pct">0%</span>
+      </div>
+      <div class="progress" id="list-progress" role="progressbar" aria-label="Packing progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <div class="progress__bar" id="list-progress-bar"></div>
+      </div>
+    </section>
+
+    <div class="toolbar">
+      <div class="chips" role="group" aria-label="Filter items">
+        <button class="chip" type="button" data-filter="all" aria-pressed="true">All</button>
+        <button class="chip" type="button" data-filter="todo" aria-pressed="false">To pack</button>
+        <button class="chip" type="button" data-filter="packed" aria-pressed="false">Packed</button>
+      </div>
+      <label class="search">
+        <span class="visually-hidden">Search items in this list</span>
+        <input class="input" id="list-search" type="search" placeholder="Search items" autocomplete="off">
+      </label>
+    </div>
+
+    <div class="groups" id="list-groups"></div>
+    <div id="list-empty" hidden></div>
+
+    <form class="addbar" id="add-form" autocomplete="off">
+      <div class="addbar__field">
+        <label class="visually-hidden" for="add-input">Add an item</label>
+        <input class="input" id="add-input" type="text" dir="auto"
+               placeholder="Add an item — try “3 x socks”" enterkeyhint="done">
+      </div>
+      <button class="btn btn--primary" type="submit" aria-label="Add item">Add</button>
+      <button class="icon-btn" id="bulk-btn" type="button" aria-label="Add several items at once" title="Add several items at once">☰</button>
+    </form>
+  </main>
+</div>
+
+<dialog id="dialog" aria-labelledby="dialog-title">
+  <div class="dialog__head">
+    <h2 class="dialog__title" id="dialog-title">Dialog</h2>
+    <button class="icon-btn" type="button" data-close aria-label="Close">✕</button>
+  </div>
+  <div class="dialog__body" id="dialog-body"></div>
+  <div class="dialog__foot" id="dialog-foot"></div>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite">
+  <span id="toast-text"></span>
+  <button class="toast__action" id="toast-action" type="button" hidden></button>
+</div>
+
+<script src="js/categories.js"></script>
+<script src="js/templates.js"></script>
+<script src="js/store.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
