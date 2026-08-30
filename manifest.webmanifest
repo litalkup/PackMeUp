@@ -1,0 +1,24 @@
+{
+  "lang": "en",
+  "dir": "auto",
+  "name": "PackMeUp — packing lists",
+  "short_name": "PackMeUp",
+  "description": "Packing lists for trips, reserve duty and everything else, in English or Hebrew. Items sort themselves into categories, tick them off as you pack, duplicate a list for next time.",
+  "start_url": ".",
+  "scope": ".",
+  "id": "packmeup",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#f4f6f8",
+  "theme_color": "#0f8f8b",
+  "categories": ["productivity", "travel", "utilities"],
+  "icons": [
+    { "src": "assets/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "assets/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ],
+  "shortcuts": [
+    { "name": "New list", "url": "./#/", "icons": [{ "src": "assets/icon-192.png", "sizes": "192x192" }] }
+  ]
+}
