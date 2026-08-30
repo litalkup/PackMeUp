@@ -431,8 +431,8 @@
   function visibleItems(list) {
     var q = ui.listQuery.toLowerCase();
     return list.items.filter(function (item) {
-      if (ui.listFilter === 'todo' && item.packed) return false;
-      if (ui.listFilter === 'packed' && !item.packed) return false;
+      if (ui.listFilter === 'todo' && store.isPacked(item)) return false;
+      if (ui.listFilter === 'packed' && !store.isPacked(item)) return false;
       if (q && item.name.toLowerCase().indexOf(q) === -1 &&
           (item.note || '').toLowerCase().indexOf(q) === -1) return false;
       return true;
@@ -516,7 +516,7 @@
   }
 
   function categoryGroup(list, group) {
-    var packed = group.items.filter(function (i) { return i.packed; }).length;
+    var packed = group.items.filter(function (i) { return store.isPacked(i); }).length;
     var allPacked = packed === group.items.length;
     var collapsed = isCollapsed(list.id, group.category.id);
 
@@ -544,23 +544,64 @@
   }
 
   function itemRow(list, item) {
-    return h('li', { class: 'item' + (item.packed ? ' item--packed' : '') }, [
-      h('button', {
-        class: 'check', type: 'button', role: 'checkbox',
-        'aria-checked': item.packed ? 'true' : 'false',
-        'aria-label': t(item.packed ? 'item.unpack' : 'item.pack', { name: item.name }),
-        text: '✓',
-        onclick: function () { store.toggleItem(list.id, item.id); }
-      }),
+    var packed = store.isPacked(item);
+    var left = item.qty - item.packedQty;
+    var partly = !packed && item.packedQty > 0;
+
+    return h('li', { class: 'item' + (packed ? ' item--packed' : '') }, [
+      item.qty > 1 ? countControl(list, item) : checkControl(list, item),
       h('button', {
         class: 'item__body', type: 'button',
         'aria-label': t('item.edit', { name: item.name }),
         onclick: function () { itemDialog(list.id, item.id); }
       }, [
         h('span', { class: 'item__name', text: item.name, dir: 'auto' }),
-        item.qty > 1 ? h('span', { class: 'item__qty', text: '×' + item.qty }) : null,
+        partly ? h('span', {
+          class: 'item__left',
+          text: left === 1 ? t('count.leftOne') : t('count.leftMany', { n: left })
+        }) : null,
         item.note ? h('span', { class: 'item__note', text: item.note, dir: 'auto' }) : null
       ])
+    ]);
+  }
+
+  function checkControl(list, item) {
+    var packed = store.isPacked(item);
+    return h('button', {
+      class: 'check', type: 'button', role: 'checkbox',
+      'aria-checked': packed ? 'true' : 'false',
+      'aria-label': t(packed ? 'item.unpack' : 'item.pack', { name: item.name }),
+      text: '✓',
+      onclick: function () { store.toggleItem(list.id, item.id); }
+    });
+  }
+
+  /*
+   * Items that come in a quantity get a counter instead of a checkbox: one tap
+   * puts one more of them in the bag, and the control fills up as it goes.
+   * Tapping a full counter starts it over, the way unticking a box does.
+   */
+  function countControl(list, item) {
+    var packed = store.isPacked(item);
+    var filled = Math.round(Math.min(1, item.packedQty / item.qty) * 100);
+    var before = item.packedQty;
+
+    return h('button', {
+      class: 'counter' + (packed ? ' counter--done' : ''), type: 'button',
+      'aria-label': t('count.aria', {
+        name: item.name, packed: item.packedQty, total: item.qty
+      }),
+      onclick: function () {
+        var updated = store.advanceItem(list.id, item.id);
+        if (!updated) return;
+        toast(t('count.toast', { packed: updated.packedQty, total: updated.qty }), {
+          label: t('action.undo'),
+          onClick: function () { store.setPackedQty(list.id, item.id, before); }
+        });
+      }
+    }, [
+      h('span', { class: 'counter__fill', style: 'width:' + filled + '%', 'aria-hidden': 'true' }),
+      h('span', { class: 'counter__text', text: item.packedQty + '/' + item.qty })
     ]);
   }
 
@@ -678,7 +719,11 @@
     var body = h('div', {}, [
       h('div', { class: 'compare' }, [
         itemPreview('dupe.existing', existing.name, existing.qty, existing.category,
-          t(existing.packed ? 'dupe.packed' : 'dupe.notPacked')),
+          store.isPacked(existing)
+            ? t('dupe.packed')
+            : existing.packedQty > 0
+              ? t('dupe.partly', { packed: existing.packedQty, total: existing.qty })
+              : t('dupe.notPacked')),
         h('div', { class: 'compare__arrow', 'aria-hidden': 'true', text: '↓' }),
         itemPreview('dupe.new', parsed.name, parsed.qty, newCategory, null)
       ]),
@@ -951,6 +996,12 @@
     var qtyInput = h('input', { class: 'input', type: 'number', min: '1', max: '999',
                                 inputmode: 'numeric', dir: 'ltr' });
     qtyInput.value = String(item.qty);
+    var packedInput = h('input', { class: 'input', type: 'number', min: '0',
+                                   max: String(item.qty), inputmode: 'numeric', dir: 'ltr' });
+    packedInput.value = String(item.packedQty);
+    qtyInput.addEventListener('input', function () {
+      packedInput.max = String(Math.max(1, parseInt(qtyInput.value, 10) || 1));
+    });
     var select = h('select', { class: 'select' }, cats.all.map(function (c) {
       return h('option', { value: c.id, text: c.icon + '  ' + cats.label(c.id) });
     }));
@@ -970,9 +1021,13 @@
           qtyInput
         ]),
         h('label', { class: 'field' }, [
-          h('span', { class: 'field__label', text: t('item.category') }),
-          select
+          h('span', { class: 'field__label', text: t('item.packedQty') }),
+          packedInput
         ])
+      ]),
+      h('label', { class: 'field' }, [
+        h('span', { class: 'field__label', text: t('item.category') }),
+        select
       ]),
       h('label', { class: 'field' }, [
         h('span', { class: 'field__label', text: t('item.note') }),
@@ -1000,6 +1055,7 @@
             var name = nameInput.value.trim() || item.name;
             var qty = Math.max(1, Math.min(999, parseInt(qtyInput.value, 10) || 1));
             store.updateItem(listId, itemId, { name: name, qty: qty, note: note.value.trim() });
+            store.setPackedQty(listId, itemId, parseInt(packedInput.value, 10) || 0);
             if (select.value !== item.category) {
               store.setItemCategory(listId, itemId, select.value);
             }

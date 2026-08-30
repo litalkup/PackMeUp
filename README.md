@@ -21,8 +21,8 @@ opens in any browser on a computer. No account, no server, works with no signal.
   Change a category by hand once and PackMeUp remembers that choice for next time.
 - **Tick as you pack** — a checkbox per item, a progress bar per list and per
   category, and a "to pack / packed" filter.
-- **Quantities** — type `3 x socks` (or `3 socks`, or `socks x3`) and it becomes
-  an item with a ×3 badge.
+- **Quantities you can count off one at a time** — type `3 x socks` (or
+  `3 socks`, or `socks x3`) and the checkbox becomes a counter: see below.
 - **Duplicate a list** — with or without the existing ticks.
 - **A warning before you add the same thing twice** — see below.
 - **Templates to start from** — trip abroad, reserve duty, weekend away, camping
@@ -35,6 +35,32 @@ opens in any browser on a computer. No account, no server, works with no signal.
 - **Export and import** — move lists between devices as a `.json` backup, or
   copy a list out as plain text.
 - **Fully bilingual** — see below.
+
+## Items that come in a quantity
+
+An item with a quantity gets a counter in place of its checkbox, and one tap
+puts one more of it in the bag:
+
+```
+[ ✓ ]  Toothbrush                 quantity 1: an ordinary checkbox
+[2/3]  Undershirts       1 left   one tap = one more packed
+[3/3]  Socks                      full: solid, reads as "done"
+```
+
+The control fills up as it goes, so a glance down the list shows where you
+stopped. Tapping a full counter starts it over, the way unticking a box does,
+and every tap leaves an **undo** in the toast for a mistaken one. For an exact
+number — or to take one back out — the item dialog has an *already packed*
+field next to the quantity.
+
+Two consequences worth knowing:
+
+- A part-packed item still counts as **to pack**: it stays in that filter and
+  in the "still to pack" count, because you are not done with it.
+- The **progress bar counts fractions**: an item at 2 of 3 moves the bar two
+  thirds of a row's worth, while the item counts themselves stay per item.
+  Lowering an item's quantity below what is packed pulls the count down with
+  it, and lists saved before this existed open with their ticked items full.
 
 ## When an item is already on the list
 

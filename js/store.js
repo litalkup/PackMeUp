@@ -81,12 +81,18 @@
         createdAt: list.createdAt || now(),
         updatedAt: list.updatedAt || list.createdAt || now(),
         items: (list.items || []).map(function (item) {
+          var qty = item.qty > 0 ? item.qty : 1;
+          /* Lists saved before quantities could be part-packed carry a
+             boolean; a ticked item means every one of them is in the bag. */
+          var done = item.packedQty === undefined
+            ? (item.packed ? qty : 0)
+            : item.packedQty;
           return {
             id: item.id || uid(),
             name: item.name || '',
-            qty: item.qty > 0 ? item.qty : 1,
+            qty: qty,
             category: cat.get(item.category).id,
-            packed: !!item.packed,
+            packedQty: Math.max(0, Math.min(qty, Math.round(done) || 0)),
             note: item.note || ''
           };
         })
@@ -175,9 +181,14 @@
       name: parsed.name,
       qty: parsed.qty,
       category: cat.categorize(parsed.name, state.learned),
-      packed: false,
+      packedQty: 0,
       note: ''
     };
+  }
+
+  /* An item is packed once every one of its units is in the bag. */
+  function isPacked(item) {
+    return item.packedQty >= item.qty;
   }
 
   function createList(options) {
@@ -218,7 +229,7 @@
     copy.updatedAt = now();
     copy.items = copy.items.map(function (item) {
       item.id = uid();
-      if (options.keepPacked !== true) item.packed = false;
+      if (options.keepPacked !== true) item.packedQty = 0;
       return item;
     });
     checkpoint('Duplicated "' + source.name + '"');
@@ -309,6 +320,7 @@
     }
     Object.keys(changes).forEach(function (key) { item[key] = changes[key]; });
     if (item.qty < 1) item.qty = 1;
+    item.packedQty = Math.max(0, Math.min(item.qty, item.packedQty || 0));
     touch(list);
     commit();
     return item;
@@ -333,7 +345,35 @@
     if (!list) return null;
     var item = getItem(list, itemId);
     if (!item) return null;
-    item.packed = packed === undefined ? !item.packed : !!packed;
+    var full = packed === undefined ? !isPacked(item) : !!packed;
+    item.packedQty = full ? item.qty : 0;
+    touch(list);
+    commit();
+    return item;
+  }
+
+  /*
+   * One tap on the counter: one more of this item went into the bag. Tapping
+   * a finished item starts it over, the way unticking a checkbox does.
+   */
+  function advanceItem(listId, itemId) {
+    var list = getList(listId);
+    if (!list) return null;
+    var item = getItem(list, itemId);
+    if (!item) return null;
+    item.packedQty = isPacked(item) ? 0 : item.packedQty + 1;
+    touch(list);
+    commit();
+    return item;
+  }
+
+  /* Exact count, from the item dialog or from undoing a tap. */
+  function setPackedQty(listId, itemId, count) {
+    var list = getList(listId);
+    if (!list) return null;
+    var item = getItem(list, itemId);
+    if (!item) return null;
+    item.packedQty = Math.max(0, Math.min(item.qty, Math.round(count) || 0));
     touch(list);
     commit();
     return item;
@@ -430,7 +470,7 @@
     item.qty = parsed.qty;
     item.category = cat.categorize(parsed.name, state.learned);
     delete item.categoryPinned;
-    item.packed = false;
+    item.packedQty = 0;
     item.note = '';
     touch(list);
     commit();
@@ -441,7 +481,7 @@
     var list = getList(listId);
     if (!list) return null;
     checkpoint(packed ? 'Checked everything' : 'Unchecked everything');
-    list.items.forEach(function (item) { item.packed = !!packed; });
+    list.items.forEach(function (item) { item.packedQty = packed ? item.qty : 0; });
     touch(list);
     commit();
     return list;
@@ -451,7 +491,7 @@
     var list = getList(listId);
     if (!list) return null;
     checkpoint('Removed packed items');
-    list.items = list.items.filter(function (item) { return !item.packed; });
+    list.items = list.items.filter(function (item) { return !isPacked(item); });
     touch(list);
     commit();
     return list;
@@ -473,14 +513,24 @@
 
   /* ------------------------------------------------------------------ stats */
 
+  /*
+   * Counts are per item, so "63 items" keeps meaning what it always did.
+   * The percentage is the average of how far each item has come, so an item
+   * at 2 of 3 moves the bar two thirds of a row's worth.
+   */
   function stats(list) {
     var total = list.items.length;
-    var packed = list.items.filter(function (i) { return i.packed; }).length;
+    var packed = 0;
+    var progress = 0;
+    list.items.forEach(function (item) {
+      if (isPacked(item)) packed++;
+      progress += Math.min(1, item.packedQty / item.qty);
+    });
     return {
       total: total,
       packed: packed,
       remaining: total - packed,
-      percent: total ? Math.round((packed / total) * 100) : 0
+      percent: total ? Math.round((progress / total) * 100) : 0
     };
   }
 
@@ -538,8 +588,9 @@
     groupByCategory(list.items).forEach(function (group) {
       lines.push(group.category.icon + ' ' + cat.label(group.category.id));
       group.items.forEach(function (item) {
-        lines.push('  [' + (item.packed ? 'x' : ' ') + '] ' +
-          (item.qty > 1 ? item.qty + ' x ' : '') + item.name);
+        var mark = isPacked(item) ? 'x' : (item.packedQty > 0 ? '~' : ' ');
+        lines.push('  [' + mark + '] ' +
+          (item.qty > 1 ? item.packedQty + '/' + item.qty + ' ' : '') + item.name);
       });
       lines.push('');
     });
@@ -596,6 +647,9 @@
     updateItem: updateItem,
     setItemCategory: setItemCategory,
     toggleItem: toggleItem,
+    advanceItem: advanceItem,
+    setPackedQty: setPackedQty,
+    isPacked: isPacked,
     deleteItem: deleteItem,
     findSimilar: findSimilar,
     sameItemName: sameItemName,

@@ -84,6 +84,57 @@ check('grouping is non-empty', store.groupByCategory(list.items).length > 5, tru
 store.toggleItem(list.id, list.items[0].id);
 check('stats track packed items', store.stats(list).packed, 1);
 
+console.log('partly packed quantities');
+var counted = store.createList({ name: 'counting', templateId: 'blank' });
+var vest = store.addItem(counted.id, '3 undershirts');
+check('a new item starts at zero', vest.packedQty, 0);
+check('and is not packed', store.isPacked(vest), false);
+
+store.advanceItem(counted.id, vest.id);
+store.advanceItem(counted.id, vest.id);
+check('two taps pack two of them', store.getList(counted.id).items[0].packedQty, 2);
+check('still not finished', store.isPacked(store.getList(counted.id).items[0]), false);
+check('a part-packed list shows two thirds', store.stats(store.getList(counted.id)).percent, 67);
+check('and the item is still to pack', store.stats(store.getList(counted.id)).remaining, 1);
+
+store.advanceItem(counted.id, vest.id);
+check('the third tap finishes it', store.isPacked(store.getList(counted.id).items[0]), true);
+check('a finished list is at 100', store.stats(store.getList(counted.id)).percent, 100);
+
+store.advanceItem(counted.id, vest.id);
+check('tapping a full counter starts over', store.getList(counted.id).items[0].packedQty, 0);
+
+store.setPackedQty(counted.id, vest.id, 2);
+check('an exact count can be set', store.getList(counted.id).items[0].packedQty, 2);
+store.setPackedQty(counted.id, vest.id, 99);
+check('over the quantity is clamped', store.getList(counted.id).items[0].packedQty, 3);
+store.setPackedQty(counted.id, vest.id, -4);
+check('under zero is clamped', store.getList(counted.id).items[0].packedQty, 0);
+
+store.setPackedQty(counted.id, vest.id, 3);
+store.updateItem(counted.id, vest.id, { qty: 2 });
+check('lowering the quantity lowers what is packed',
+  store.getList(counted.id).items[0].packedQty, 2);
+
+store.setAllPacked(counted.id, true);
+check('"mark everything packed" fills the counters',
+  store.getList(counted.id).items[0].packedQty, 2);
+store.setAllPacked(counted.id, false);
+check('and unchecking empties them', store.getList(counted.id).items[0].packedQty, 0);
+
+store.setPackedQty(counted.id, vest.id, 1);
+check('the text export marks a part-packed item',
+  /\[~\] 1\/2 undershirts/.test(store.listToText(counted.id)), true);
+
+var oldFormat = JSON.stringify({ lists: [{ name: 'old', items: [
+  { name: 'socks', qty: 4, packed: true }, { name: 'hat', qty: 1, packed: false }
+] }] });
+store.importJSON(oldFormat);
+var migrated = store.getLists()[0];
+check('a ticked item from an older save becomes fully packed',
+  migrated.items[0].packedQty, 4);
+check('an unticked one starts empty', migrated.items[1].packedQty, 0);
+
 var copy = store.duplicateList(list.id);
 check('duplicate keeps the items', copy.items.length, list.items.length);
 check('duplicate resets the ticks', store.stats(copy).packed, 0);
@@ -133,11 +184,11 @@ var replaced = store.getList(dupeList.id).items[0];
 check('replacing keeps the same slot', replaced.id, original.id);
 check('replacing takes the new name', replaced.name, 'wool socks');
 check('replacing takes the new quantity', replaced.qty, 7);
-check('replacing clears the tick', replaced.packed, false);
+check('replacing clears the tick', replaced.packedQty, 0);
 check('replacing does not grow the list', store.getList(dupeList.id).items.length, 1);
 check('replacing is undoable', typeof store.undo(), 'string');
 check('undo restores the original item', store.getList(dupeList.id).items[0].name, 'socks');
-check('undo restores its tick', store.getList(dupeList.id).items[0].packed, true);
+check('undo restores its tick', store.isPacked(store.getList(dupeList.id).items[0]), true);
 
 console.log('hebrew interface');
 i18n.setLang('he');
