@@ -12,6 +12,7 @@ var storage = {};
    persistence can be asserted synchronously. */
 var sandbox = {
   console: console,
+  navigator: { languages: ['en-GB'] },
   setTimeout: function (fn) { fn(); return 0; },
   clearTimeout: function () {}
 };
@@ -22,12 +23,14 @@ sandbox.localStorage = {
   removeItem: function (k) { delete storage[k]; }
 };
 vm.createContext(sandbox);
-['js/categories.js', 'js/templates.js', 'js/store.js'].forEach(function (file) {
+['js/i18n.js', 'js/categories.js', 'js/templates.js', 'js/store.js'].forEach(function (file) {
   vm.runInContext(fs.readFileSync(path.join(root, file), 'utf8'), sandbox, { filename: file });
 });
 
 var cats = sandbox.PMU.categories;
 var store = sandbox.PMU.store;
+var i18n = sandbox.PMU.i18n;
+var templates = sandbox.PMU.templates;
 store.load();
 
 var failures = 0;
@@ -48,6 +51,17 @@ check('israeli bandage -> health', cats.categorize('Israeli bandage'), 'health')
 check('combat uniform -> military', cats.categorize('Combat uniform'), 'military');
 check('hebrew: מטען -> electronics', cats.categorize('מטען'), 'electronics');
 check('hebrew: מדים -> military', cats.categorize('מדים'), 'military');
+check('hebrew: מברשת שיניים -> toiletries', cats.categorize('מברשת שיניים'), 'toiletries');
+check('hebrew: נעלי הליכה -> footwear', cats.categorize('נעלי הליכה'), 'footwear');
+check('hebrew: שק שינה -> gear', cats.categorize('שק שינה'), 'gear');
+check('hebrew: חיתולים -> kids', cats.categorize('חיתולים'), 'kids');
+check('hebrew plural: גרב = גרביים', cats.categorize('גרב'), cats.categorize('גרביים'));
+check('hebrew prefix: הדרכון -> documents', cats.categorize('הדרכון'), 'documents');
+check('hebrew two prefixes: שהתרופות -> health', cats.categorize('שהתרופות'), 'health');
+check('hebrew prefix + plural: ומגבות -> toiletries', cats.categorize('ומגבות'), 'toiletries');
+check('hebrew phrase with prefix: לתיק גב -> gear', cats.categorize('לתיק גב'), 'gear');
+check('prefix letters are not stripped off keywords', cats.categorize('מגבת'), 'toiletries');
+check('mixed languages in one list', cats.categorize('3 גרביים'), cats.categorize('3 socks'));
 check('unknown -> misc', cats.categorize('flux capacitor'), 'misc');
 check('user correction wins', cats.categorize('umbrella', { umbrella: 'clothing' }), 'clothing');
 
@@ -58,6 +72,8 @@ check('"socks x3"', store.parseLine('socks x3'), { name: 'socks', qty: 3 });
 check('"socks (4)"', store.parseLine('socks (4)'), { name: 'socks', qty: 4 });
 check('"- passport"', store.parseLine('- passport'), { name: 'passport', qty: 1 });
 check('plain text', store.parseLine('Sun hat'), { name: 'Sun hat', qty: 1 });
+check('hebrew "3 גרביים"', store.parseLine('3 גרביים'), { name: 'גרביים', qty: 3 });
+check('hebrew "2 x מגבת"', store.parseLine('2 x מגבת'), { name: 'מגבת', qty: 2 });
 
 console.log('lists');
 var list = store.createList({ name: 'Test trip', templateId: 'travel' });
@@ -89,6 +105,34 @@ store.deleteItem(list.id, added.id);
 check('item deleted', store.getList(list.id).items.some(function (i) { return i.id === added.id; }), false);
 check('delete can be undone', typeof store.undo(), 'string');
 check('item is back', store.getList(list.id).items.some(function (i) { return i.id === added.id; }), true);
+
+console.log('hebrew interface');
+i18n.setLang('he');
+check('direction flips', i18n.dir(), 'rtl');
+check('category labels translate', cats.label('clothing'), 'ביגוד');
+check('hebrew singular', i18n.plural(1, 'item'), 'פריט אחד');
+check('hebrew plural', i18n.plural(3, 'item'), '3 פריטים');
+check('interpolation', i18n.t('card.updated', { when: 'היום' }), 'עודכן היום');
+check('missing keys fall back to english', i18n.t('nope.nope'), 'nope.nope');
+
+var hebrewList = store.createList({ templateId: 'reserve' });
+check('template name is hebrew', hebrewList.name, 'מילואים');
+check('template items are hebrew', /[֐-׿]/.test(hebrewList.items[0].name), true);
+check('every hebrew item is categorised',
+  hebrewList.items.filter(function (i) { return i.category === 'misc'; }).length, 0);
+check('hebrew list groups into categories', store.groupByCategory(hebrewList.items).length > 8, true);
+check('text export uses hebrew labels', /ציוד צבאי/.test(store.listToText(hebrewList.id)), true);
+
+var hebrewCopy = store.duplicateList(hebrewList.id);
+check('copy suffix is hebrew', hebrewCopy.name, 'מילואים (עותק)');
+check('second hebrew copy is numbered', store.duplicateList(hebrewList.id).name, 'מילואים (עותק 2)');
+
+i18n.setLang('en');
+check('an english copy of a hebrew copy strips the hebrew suffix',
+  store.duplicateList(hebrewCopy.id).name, 'מילואים (copy)');
+check('english labels come back', cats.label('clothing'), 'Clothing');
+check('templates keep both languages',
+  templates.localized(templates.get('travel').name, 'he'), 'טיול בחו״ל');
 
 console.log('persistence and transfer');
 var json = store.exportAll();

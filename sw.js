@@ -4,12 +4,13 @@
  * Caches the app shell so the app opens with no connection at all. Your data
  * never goes through here - it lives in localStorage on the device.
  */
-var CACHE = 'packmeup-v1';
+var CACHE = 'packmeup-v2';
 
 var SHELL = [
   './',
   'index.html',
   'css/styles.css',
+  'js/i18n.js',
   'js/categories.js',
   'js/templates.js',
   'js/store.js',

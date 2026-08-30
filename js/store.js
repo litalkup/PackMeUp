@@ -13,6 +13,7 @@
 
   var cat = global.PMU.categories;
   var templates = global.PMU.templates;
+  var i18n = global.PMU.i18n;
 
   var state = null;
   var listeners = [];
@@ -65,7 +66,7 @@
       version: SCHEMA_VERSION,
       lists: [],
       learned: {},                       /* item name -> category chosen by the user */
-      settings: { theme: 'system', hidePacked: false }
+      settings: { theme: 'system', lang: null, hidePacked: false }
     };
   }
 
@@ -181,10 +182,13 @@
 
   function createList(options) {
     options = options || {};
-    var template = templates.filter(function (t) { return t.id === options.templateId; })[0];
+    var lang = i18n.getLang();
+    var template = templates.get(options.templateId);
+    var templateName = template ? templates.localized(template.name, lang) : '';
     var list = {
       id: uid(),
-      name: options.name || (template && template.id !== 'blank' ? template.name : 'New list'),
+      name: options.name ||
+        (template && template.id !== 'blank' ? templateName : i18n.t('menu.newList')),
       icon: options.icon || (template ? template.icon : '🧳'),
       notes: '',
       createdAt: now(),
@@ -192,7 +196,7 @@
       items: []
     };
     if (template) {
-      template.items.forEach(function (line) {
+      templates.localized(template.items, lang).forEach(function (line) {
         var item = makeItem(line);
         if (item) list.items.push(item);
       });
@@ -223,13 +227,21 @@
     return copy;
   }
 
-  /* "Trip abroad" -> "Trip abroad (copy)" -> "Trip abroad (copy 2)" ... */
+  /*
+   * "Trip abroad" -> "Trip abroad (copy)" -> "Trip abroad (copy 2)" ...
+   * The suffix follows the interface language, and a copy of a copy is
+   * recognised whichever language made it.
+   */
+  var COPY_SUFFIXES = ['copy', 'עותק'];
+
   function nextCopyName(name) {
-    var base = name.replace(/\s*\(copy(\s+\d+)?\)$/i, '');
-    var candidate = base + ' (copy)';
+    var pattern = new RegExp('\\s*\\((?:' + COPY_SUFFIXES.join('|') + ')(?:\\s+\\d+)?\\)$', 'i');
+    var base = name.replace(pattern, '');
+    var word = i18n.t('dup.suffix');
+    var candidate = base + ' (' + word + ')';
     var n = 2;
     while (state.lists.some(function (l) { return l.name === candidate; })) {
-      candidate = base + ' (copy ' + n + ')';
+      candidate = base + ' (' + word + ' ' + n + ')';
       n++;
     }
     return candidate;
@@ -438,7 +450,7 @@
     if (!list) return '';
     var lines = [list.name, ''];
     groupByCategory(list.items).forEach(function (group) {
-      lines.push(group.category.icon + ' ' + group.category.label);
+      lines.push(group.category.icon + ' ' + cat.label(group.category.id));
       group.items.forEach(function (item) {
         lines.push('  [' + (item.packed ? 'x' : ' ') + '] ' +
           (item.qty > 1 ? item.qty + ' x ' : '') + item.name);
@@ -454,11 +466,11 @@
     try {
       data = JSON.parse(text);
     } catch (err) {
-      throw new Error('That file is not valid JSON.');
+      throw new Error(i18n.t('import.badJson'));
     }
     var incoming = Array.isArray(data) ? data : data.lists;
     if (!Array.isArray(incoming) || !incoming.length) {
-      throw new Error('No packing lists found in that file.');
+      throw new Error(i18n.t('import.noLists'));
     }
     checkpoint('Imported lists');
     var imported = migrate({ lists: incoming }).lists;

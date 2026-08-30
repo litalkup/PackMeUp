@@ -1,6 +1,11 @@
 /* ==========================================================================
    PackMeUp — mobile-first styles.
    One stylesheet, CSS custom properties, light + dark themes.
+
+   The layout works in both directions: everything that depends on the reading
+   order uses logical properties (inset-inline-start, padding-inline, text-align:
+   start), so setting dir="rtl" on <html> flips the interface for Hebrew.
+   Physical left/right survives only where it should — the notch insets.
    ========================================================================== */
 
 :root {
@@ -78,7 +83,7 @@ body {
   background: var(--bg);
   color: var(--text);
   font: 16px/1.45 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
-        'Helvetica Neue', Arial, 'Noto Sans Hebrew', sans-serif;
+        'Helvetica Neue', Arial, 'Noto Sans Hebrew', 'Arial Hebrew', sans-serif;
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior-y: none;
@@ -101,7 +106,9 @@ a { color: var(--brand-strong); }
   position: sticky; top: 0; z-index: 30;
   display: flex; align-items: center; gap: 8px;
   min-height: var(--header-h);
-  padding: 8px max(12px, env(safe-area-inset-right)) 8px max(12px, env(safe-area-inset-left));
+  padding-block: 8px;
+  padding-left: max(12px, env(safe-area-inset-left));
+  padding-right: max(12px, env(safe-area-inset-right));
   background: color-mix(in srgb, var(--bg-elevated) 88%, transparent);
   backdrop-filter: saturate(1.4) blur(12px);
   border-bottom: 1px solid var(--border);
@@ -117,7 +124,11 @@ a { color: var(--brand-strong); }
 .topbar__spacer { flex: 1 1 auto; }
 
 .view { flex: 1 1 auto; width: 100%; max-width: var(--maxw); margin: 0 auto;
-        padding: 16px max(14px, env(safe-area-inset-right)) 24px max(14px, env(safe-area-inset-left)); }
+        padding-block: 16px 24px;
+        padding-left: max(14px, env(safe-area-inset-left));
+        padding-right: max(14px, env(safe-area-inset-right)); }
+
+#view-list { display: flex; flex-direction: column; }
 
 /* ----------------------------------------------------------------- buttons */
 
@@ -175,9 +186,9 @@ a { color: var(--brand-strong); }
 .search {
   position: relative; flex: 1 1 auto; min-width: 0;
 }
-.search .input { padding-left: 36px; min-height: 40px; font-size: 15px; }
+.search .input { padding-inline-start: 36px; min-height: 40px; font-size: 15px; }
 .search::before {
-  content: '🔍'; position: absolute; left: 11px; top: 50%;
+  content: '🔍'; position: absolute; inset-inline-start: 11px; top: 50%;
   transform: translateY(-50%); font-size: 13px; opacity: .7; pointer-events: none;
 }
 
@@ -198,7 +209,7 @@ a { color: var(--brand-strong); }
   padding: 14px; border: 1px solid var(--border); border-radius: var(--radius);
   background: var(--bg-elevated); box-shadow: var(--shadow-sm);
   transition: box-shadow .15s ease, transform .06s ease, border-color .15s ease;
-  cursor: pointer; text-align: left;
+  cursor: pointer; text-align: start;
 }
 .card:hover { box-shadow: var(--shadow-md); border-color: var(--border-strong); }
 .card:active { transform: scale(.995); }
@@ -216,14 +227,14 @@ a { color: var(--brand-strong); }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .card__meta { margin: 2px 0 0; font-size: 13px; color: var(--text-muted); }
-.card__menu { flex: 0 0 auto; margin: -4px -6px 0 0; }
+.card__menu { flex: 0 0 auto; margin-block-start: -4px; margin-inline-end: -6px; }
 
 .progress {
   position: relative; height: 8px; border-radius: 99px;
   background: var(--bg-sunken); overflow: hidden;
 }
 .progress__bar {
-  position: absolute; inset: 0 auto 0 0; width: 0;
+  position: absolute; inset-block: 0; inset-inline-start: 0; width: 0;
   border-radius: 99px; background: var(--brand);
   transition: width .3s cubic-bezier(.2, .8, .3, 1);
 }
@@ -258,7 +269,7 @@ a { color: var(--brand-strong); }
 
 .template {
   display: flex; align-items: center; gap: 11px; width: 100%;
-  padding: 11px 12px; text-align: left;
+  padding: 11px 12px; text-align: start;
   border: 1px solid var(--border); border-radius: var(--radius);
   background: var(--bg-elevated);
 }
@@ -288,6 +299,11 @@ html[data-theme='dark'] .template[aria-pressed='true'] { background: var(--brand
 .list-head__pct { font-size: 22px; font-weight: 800; color: var(--brand-strong); font-variant-numeric: tabular-nums; }
 
 .toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+/* The home toolbar keeps search and the new-list button on one line; the
+   list toolbar is allowed to wrap its filter chips onto their own row. */
+#view-home .toolbar { flex-wrap: nowrap; }
+#view-home .toolbar .btn { flex: 0 0 auto; }
+
 .chips { display: flex; gap: 6px; }
 .chip {
   padding: 6px 12px; border-radius: 99px; font-size: 13.5px; font-weight: 600;
@@ -307,7 +323,7 @@ html[data-theme='dark'] .template[aria-pressed='true'] { background: var(--brand
 }
 .group__head {
   display: flex; align-items: center; gap: 10px; width: 100%;
-  padding: 11px 13px; border: 0; background: transparent; text-align: left;
+  padding: 11px 13px; border: 0; background: transparent; text-align: start;
 }
 .group__head:hover { background: var(--surface-hover); }
 .group__icon { font-size: 18px; }
@@ -317,6 +333,7 @@ html[data-theme='dark'] .template[aria-pressed='true'] { background: var(--brand
 }
 .group__chevron { color: var(--text-faint); transition: transform .2s ease; font-size: 12px; }
 .group[data-collapsed='true'] .group__chevron { transform: rotate(-90deg); }
+[dir='rtl'] .group[data-collapsed='true'] .group__chevron { transform: rotate(90deg); }
 .group[data-collapsed='true'] .items { display: none; }
 .group--done .group__name { color: var(--text-muted); }
 
@@ -344,7 +361,7 @@ html[data-theme='dark'] .template[aria-pressed='true'] { background: var(--brand
 
 .item__body {
   flex: 1 1 auto; min-width: 0; display: flex; align-items: baseline; gap: 7px;
-  background: none; border: 0; padding: 0; text-align: left; color: inherit;
+  background: none; border: 0; padding: 0; text-align: start; color: inherit;
 }
 .item__name { font-size: 15.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .item__qty {
@@ -359,13 +376,16 @@ html[data-theme='dark'] .template[aria-pressed='true'] { background: var(--brand
 .addbar {
   position: sticky; bottom: 0; z-index: 20;
   display: flex; gap: 8px; align-items: flex-end;
-  padding: 10px max(14px, env(safe-area-inset-right)) calc(10px + var(--safe-b)) max(14px, env(safe-area-inset-left));
-  margin: 14px -14px 0;
+  padding-block: 10px calc(10px + var(--safe-b));
+  padding-left: max(14px, env(safe-area-inset-left));
+  padding-right: max(14px, env(safe-area-inset-right));
+  margin: auto -14px 0;                     /* pinned to the bottom of the view */
   background: color-mix(in srgb, var(--bg-elevated) 92%, transparent);
   backdrop-filter: saturate(1.4) blur(12px);
   border-top: 1px solid var(--border);
 }
 .addbar .input { min-height: 44px; }
+@media (max-width: 420px) { .addbar .btn { padding: 0 11px; } }
 .addbar__field { flex: 1 1 auto; min-width: 0; }
 .addbar__hint { margin: 6px 2px 0; font-size: 12px; color: var(--text-faint); }
 
@@ -405,7 +425,7 @@ dialog::backdrop { background: rgba(9, 16, 22, .5); backdrop-filter: blur(2px); 
 .menu__item {
   display: flex; align-items: center; gap: 11px; width: 100%;
   padding: 12px 12px; border: 0; border-radius: var(--radius-sm);
-  background: transparent; text-align: left; font-size: 15.5px; font-weight: 500;
+  background: transparent; text-align: start; font-size: 15.5px; font-weight: 500;
 }
 .menu__item:hover { background: var(--surface-hover); }
 .menu__item--danger { color: var(--danger); }

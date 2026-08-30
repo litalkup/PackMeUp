@@ -2,7 +2,9 @@
  * PackMeUp - UI layer.
  *
  * Two views (all lists / one list) driven by the hash, rendered from the
- * store. No framework, no build step: open index.html and it runs.
+ * store. No framework, no build step: open index.html and it runs. Every
+ * visible string comes from js/i18n.js, and the whole layout flips to
+ * right-to-left when the language does.
  */
 (function (global) {
   'use strict';
@@ -10,6 +12,10 @@
   var store = global.PMU.store;
   var cats = global.PMU.categories;
   var templates = global.PMU.templates;
+  var i18n = global.PMU.i18n;
+
+  function t(key, params) { return i18n.t(key, params); }
+  function plural(count, kind) { return i18n.plural(count, kind); }
 
   var ICONS = ['🧳', '✈️', '🪖', '⛺', '🏖️', '💼', '🏋️', '🧸', '🚗', '🚲', '🎒',
                '🏔️', '🛶', '🎿', '🎪', '🎓', '🏥', '🏡', '🎉', '📦'];
@@ -37,7 +43,6 @@
         if (value === null || value === undefined || value === false) return;
         if (key === 'class') node.className = value;
         else if (key === 'text') node.textContent = value;
-        else if (key === 'html') node.innerHTML = value;
         else if (key.indexOf('on') === 0 && typeof value === 'function') {
           node.addEventListener(key.slice(2), value);
         } else if (value === true) node.setAttribute(key, '');
@@ -53,17 +58,15 @@
 
   function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
 
-  function plural(n, one, many) { return n + ' ' + (n === 1 ? one : (many || one + 's')); }
-
   function relativeDate(iso) {
     var then = new Date(iso).getTime();
     if (isNaN(then)) return '';
     var days = Math.floor((Date.now() - then) / 86400000);
-    if (days <= 0) return 'today';
-    if (days === 1) return 'yesterday';
-    if (days < 7) return days + ' days ago';
-    if (days < 30) return Math.floor(days / 7) + 'w ago';
-    return new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+    if (days <= 0) return t('date.today');
+    if (days === 1) return t('date.yesterday');
+    if (days < 7) return t('date.daysAgo', { n: days });
+    if (days < 30) return t('date.weeksAgo', { n: Math.floor(days / 7) });
+    return new Date(iso).toLocaleDateString(i18n.meta().locale, { day: 'numeric', month: 'short' });
   }
 
   function download(filename, text, mime) {
@@ -96,8 +99,10 @@
     });
   }
 
+  /* Latin file names travel better than Hebrew ones across devices. */
   function slug(text) {
-    return String(text).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'list';
+    var ascii = String(text).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    return ascii || 'packmeup-list';
   }
 
   /* --------------------------------------------------------------- toast */
@@ -131,10 +136,10 @@
 
   function undoable(message) {
     toast(message, {
-      label: 'Undo',
+      label: t('action.undo'),
       onClick: function () {
         store.undo();
-        toast('Undone');
+        toast(t('toast.undone'));
       }
     });
   }
@@ -199,14 +204,25 @@
       title: options.title,
       body: h('p', { text: options.message, style: 'margin:0;color:var(--text-muted)' }),
       actions: [
-        { label: 'Cancel' },
+        { label: t('action.cancel') },
         {
-          label: options.confirmLabel || 'Delete',
+          label: options.confirmLabel || t('action.delete'),
           variant: options.variant || 'danger',
           onClick: options.onConfirm
         }
       ]
     });
+  }
+
+  /* A menu row inside a dialog. */
+  function menuEntry(icon, label, onClick, danger) {
+    return h('button', {
+      class: 'menu__item' + (danger ? ' menu__item--danger' : ''), type: 'button',
+      onclick: function () { closeDialog(); setTimeout(onClick, 10); }
+    }, [
+      h('span', { class: 'menu__icon', text: icon, 'aria-hidden': 'true' }),
+      h('span', { text: label })
+    ]);
   }
 
   /* ------------------------------------------------------------- routing */
@@ -242,7 +258,7 @@
     var dark = choice === 'dark' || (choice === 'system' &&
       global.matchMedia('(prefers-color-scheme: dark)').matches);
     document.documentElement.dataset.theme = dark ? 'dark' : 'light';
-    $('theme-btn').title = 'Theme: ' + choice + ' (tap to change)';
+    $('theme-btn').title = t('menu.theme', { theme: t('theme.' + choice) });
   }
 
   function cycleTheme() {
@@ -250,7 +266,60 @@
     var next = THEMES[(THEMES.indexOf(current) + 1) % THEMES.length];
     store.setSetting('theme', next);
     applyTheme();
-    toast('Theme: ' + next);
+    toast(t('theme.changed', { theme: t('theme.' + next) }));
+  }
+
+  /* ------------------------------------------------------------ language */
+
+  /*
+   * Applies the current language to the document: text direction, the page
+   * title, and every element carrying a data-i18n* attribute.
+   */
+  function applyLanguage() {
+    var meta = i18n.meta();
+    var root = document.documentElement;
+    root.lang = meta.id;
+    root.dir = meta.dir;
+    document.title = t('app.title');
+
+    each('[data-i18n]', function (node) {
+      node.textContent = t(node.getAttribute('data-i18n'));
+    });
+    each('[data-i18n-placeholder]', function (node) {
+      node.setAttribute('placeholder', t(node.getAttribute('data-i18n-placeholder')));
+    });
+    each('[data-i18n-aria]', function (node) {
+      node.setAttribute('aria-label', t(node.getAttribute('data-i18n-aria')));
+    });
+    each('[data-i18n-title]', function (node) {
+      node.setAttribute('title', t(node.getAttribute('data-i18n-title')));
+    });
+
+    /* The back arrow points the way the language reads. */
+    $('back-btn').textContent = i18n.isRTL() ? '→' : '←';
+    applyTheme();
+  }
+
+  function each(selector, fn) {
+    Array.prototype.forEach.call(document.querySelectorAll(selector), fn);
+  }
+
+  function setLanguage(id) {
+    if (id === i18n.getLang()) return;
+    i18n.setLang(id);
+    store.setSetting('lang', id);
+    applyLanguage();
+    render();
+  }
+
+  function languageDialog() {
+    var menu = h('div', { class: 'menu' }, i18n.languages().map(function (lang) {
+      var active = lang.id === i18n.getLang();
+      return menuEntry(active ? '✓' : '　', lang.label, function () {
+        setLanguage(lang.id);
+      });
+    }));
+    openDialog({ title: t('menu.language', { language: i18n.meta().label }), body: menu });
   }
 
   /* ----------------------------------------------------------- home view */
@@ -276,7 +345,7 @@
     var total = store.getLists().length;
     $('home-heading').hidden = total === 0;
     $('home-count').textContent = ui.homeQuery
-      ? plural(lists.length, 'match', 'matches')
+      ? plural(lists.length, 'match')
       : plural(total, 'list');
 
     var empty = $('home-empty');
@@ -288,8 +357,8 @@
       empty.hidden = false;
       empty.appendChild(h('div', { class: 'empty' }, [
         h('div', { class: 'empty__emoji', text: '🔍' }),
-        h('h2', { text: 'Nothing matches “' + ui.homeQuery + '”' }),
-        h('p', { text: 'Try a different word, or start a new list.' })
+        h('h2', { text: t('home.noMatch.title', { q: ui.homeQuery }), dir: 'auto' }),
+        h('p', { text: t('home.noMatch.body') })
       ]));
     } else {
       empty.hidden = true;
@@ -299,12 +368,10 @@
   function emptyHomeState() {
     return h('div', { class: 'empty' }, [
       h('div', { class: 'empty__emoji', text: '🧳' }),
-      h('h2', { text: 'No lists yet' }),
-      h('p', { text: 'Start from a ready-made template — a trip abroad, reserve duty, ' +
-                     'camping — or build your own from scratch. Everything you add sorts ' +
-                     'itself into categories.' }),
+      h('h2', { text: t('home.empty.title') }),
+      h('p', { text: t('home.empty.body') }),
       h('button', {
-        class: 'btn btn--primary', type: 'button', text: '+ New list',
+        class: 'btn btn--primary', type: 'button', text: t('home.newList'),
         onclick: newListDialog
       })
     ]);
@@ -314,10 +381,10 @@
     var st = store.stats(list);
     var done = st.total > 0 && st.remaining === 0;
 
-    var card = h('div', {
+    return h('div', {
       class: 'card' + (done ? ' card--done' : ''),
       role: 'button', tabindex: '0',
-      'aria-label': list.name + ', ' + st.packed + ' of ' + st.total + ' packed',
+      'aria-label': t('card.aria', { name: list.name, packed: st.packed, total: st.total }),
       onclick: function () { navigate('#/list/' + list.id); },
       onkeydown: function (event) {
         if (event.key === 'Enter' || event.key === ' ') {
@@ -331,11 +398,13 @@
         h('div', { class: 'card__head' }, [
           h('h3', { class: 'card__title', text: list.name, dir: 'auto' }),
           h('p', { class: 'card__meta', text: st.total
-            ? plural(st.total, 'item') + ' · ' + plural(store.groupByCategory(list.items).length, 'category', 'categories')
-            : 'Empty list' })
+            ? plural(st.total, 'item') + ' · ' +
+              plural(store.groupByCategory(list.items).length, 'category')
+            : t('card.empty') })
         ]),
         h('button', {
-          class: 'icon-btn card__menu', type: 'button', 'aria-label': 'Options for ' + list.name,
+          class: 'icon-btn card__menu', type: 'button',
+          'aria-label': t('card.options', { name: list.name }),
           text: '⋯',
           onclick: function (event) { event.stopPropagation(); listMenuDialog(list.id); }
         })
@@ -348,12 +417,13 @@
         h('div', { class: 'progress__bar', style: 'width:' + st.percent + '%' })
       ]),
       h('div', { class: 'card__foot' }, [
-        h('span', { class: 'badge' + (done ? ' badge--done' : ''),
-                    text: done ? '✓ All packed' : st.packed + ' / ' + st.total + ' packed' }),
-        h('span', { text: 'updated ' + relativeDate(list.updatedAt) })
+        h('span', {
+          class: 'badge' + (done ? ' badge--done' : ''),
+          text: done ? t('card.allPacked') : t('card.packedOf', { packed: st.packed, total: st.total })
+        }),
+        h('span', { text: t('card.updated', { when: relativeDate(list.updatedAt) }) })
       ])
     ]);
-    return card;
   }
 
   /* ----------------------------------------------------------- list view */
@@ -379,15 +449,15 @@
     $('list-name').textContent = list.name;
     $('list-sub').textContent = st.total
       ? st.remaining === 0
-        ? 'Everything is packed 🎉'
-        : plural(st.remaining, 'item') + ' still to pack · ' + plural(st.total, 'item') + ' total'
-      : 'Nothing here yet';
+        ? t('list.sub.allPacked')
+        : t('list.sub.remaining', { remaining: plural(st.remaining, 'item'), total: st.total })
+      : t('list.sub.empty');
     $('list-pct').textContent = st.percent + '%';
     $('list-progress').setAttribute('aria-valuenow', String(st.percent));
     $('list-progress-bar').style.width = st.percent + '%';
     $('list-progress').classList.toggle('progress--done', st.total > 0 && st.remaining === 0);
 
-    Array.prototype.forEach.call(document.querySelectorAll('.chip[data-filter]'), function (chip) {
+    each('.chip[data-filter]', function (chip) {
       chip.setAttribute('aria-pressed', chip.dataset.filter === ui.listFilter ? 'true' : 'false');
     });
 
@@ -402,38 +472,37 @@
     clear(empty);
     if (!items.length) {
       empty.hidden = false;
-      empty.appendChild(listEmptyState(list, st));
+      empty.appendChild(listEmptyState(st));
     } else {
       empty.hidden = true;
     }
   }
 
-  function listEmptyState(list, st) {
+  function listEmptyState(st) {
     if (!st.total) {
       return h('div', { class: 'empty' }, [
         h('div', { class: 'empty__emoji', text: '📝' }),
-        h('h2', { text: 'Empty list' }),
-        h('p', { text: 'Add items in the box below. Type “3 x socks” to set a quantity — ' +
-                       'each item lands in the right category by itself.' })
+        h('h2', { text: t('empty.list.title') }),
+        h('p', { text: t('empty.list.body') })
       ]);
     }
     if (ui.listQuery) {
       return h('div', { class: 'empty' }, [
         h('div', { class: 'empty__emoji', text: '🔍' }),
-        h('h2', { text: 'No items match “' + ui.listQuery + '”' })
+        h('h2', { text: t('empty.search.title', { q: ui.listQuery }), dir: 'auto' })
       ]);
     }
     if (ui.listFilter === 'todo') {
       return h('div', { class: 'empty' }, [
         h('div', { class: 'empty__emoji', text: '🎉' }),
-        h('h2', { text: 'Nothing left to pack' }),
-        h('p', { text: 'Every item on this list is ticked off. Safe travels!' })
+        h('h2', { text: t('empty.todo.title') }),
+        h('p', { text: t('empty.todo.body') })
       ]);
     }
     return h('div', { class: 'empty' }, [
       h('div', { class: 'empty__emoji', text: '📦' }),
-      h('h2', { text: 'Nothing packed yet' }),
-      h('p', { text: 'Tick items off as they go into the bag and they will show up here.' })
+      h('h2', { text: t('empty.packed.title') }),
+      h('p', { text: t('empty.packed.body') })
     ]);
   }
 
@@ -451,7 +520,7 @@
     var allPacked = packed === group.items.length;
     var collapsed = isCollapsed(list.id, group.category.id);
 
-    var section = h('section', {
+    return h('section', {
       class: 'group' + (allPacked ? ' group--done' : ''),
       'data-collapsed': collapsed ? 'true' : 'false'
     }, [
@@ -464,7 +533,7 @@
         }
       }, [
         h('span', { class: 'group__icon', text: group.category.icon, 'aria-hidden': 'true' }),
-        h('span', { class: 'group__name', text: group.category.label }),
+        h('span', { class: 'group__name', text: cats.label(group.category.id) }),
         h('span', { class: 'group__count', text: packed + '/' + group.items.length }),
         h('span', { class: 'group__chevron', text: '▾', 'aria-hidden': 'true' })
       ]),
@@ -472,7 +541,6 @@
         return itemRow(list, item);
       }))
     ]);
-    return section;
   }
 
   function itemRow(list, item) {
@@ -480,15 +548,13 @@
       h('button', {
         class: 'check', type: 'button', role: 'checkbox',
         'aria-checked': item.packed ? 'true' : 'false',
-        'aria-label': (item.packed ? 'Unpack ' : 'Pack ') + item.name,
+        'aria-label': t(item.packed ? 'item.unpack' : 'item.pack', { name: item.name }),
         text: '✓',
-        onclick: function () {
-          store.toggleItem(list.id, item.id);
-        }
+        onclick: function () { store.toggleItem(list.id, item.id); }
       }),
       h('button', {
         class: 'item__body', type: 'button',
-        'aria-label': 'Edit ' + item.name,
+        'aria-label': t('item.edit', { name: item.name }),
         onclick: function () { itemDialog(list.id, item.id); }
       }, [
         h('span', { class: 'item__name', text: item.name, dir: 'auto' }),
@@ -502,11 +568,13 @@
 
   function newListDialog() {
     var chosen = 'blank';
+    var lang = i18n.getLang();
     var nameInput = h('input', { class: 'input', type: 'text', id: 'new-list-name',
-                                 placeholder: 'e.g. Greece, August', dir: 'auto' });
+                                 placeholder: t('new.namePlaceholder'), dir: 'auto' });
 
     var grid = h('div', { class: 'templates' });
-    templates.forEach(function (tpl) {
+    templates.all.forEach(function (tpl) {
+      var name = templates.localized(tpl.name, lang);
       var button = h('button', {
         class: 'template', type: 'button', 'aria-pressed': tpl.id === chosen ? 'true' : 'false',
         onclick: function () {
@@ -514,13 +582,13 @@
           Array.prototype.forEach.call(grid.children, function (child) {
             child.setAttribute('aria-pressed', child === button ? 'true' : 'false');
           });
-          if (!nameInput.value.trim() && tpl.id !== 'blank') nameInput.value = tpl.name;
+          if (!nameInput.value.trim() && tpl.id !== 'blank') nameInput.value = name;
         }
       }, [
         h('span', { class: 'template__icon', text: tpl.icon, 'aria-hidden': 'true' }),
         h('span', { class: 'template__body' }, [
-          h('div', { class: 'template__name', text: tpl.name }),
-          h('div', { class: 'template__desc', text: tpl.description })
+          h('div', { class: 'template__name', text: name }),
+          h('div', { class: 'template__desc', text: templates.localized(tpl.description, lang) })
         ])
       ]);
       grid.appendChild(button);
@@ -528,23 +596,23 @@
 
     var body = h('div', {}, [
       h('label', { class: 'field' }, [
-        h('span', { class: 'field__label', text: 'List name' }),
+        h('span', { class: 'field__label', text: t('new.name') }),
         nameInput
       ]),
-      h('div', { class: 'field__label', text: 'Start from' }),
+      h('div', { class: 'field__label', text: t('new.startFrom') }),
       grid
     ]);
 
     openDialog({
-      title: 'New packing list',
+      title: t('new.title'),
       body: body,
       focus: '#new-list-name',
       actions: [
-        { label: 'Cancel' },
+        { label: t('action.cancel') },
         {
-          label: 'Create list', variant: 'primary',
+          label: t('new.create'), variant: 'primary',
           onClick: function () {
-            var tpl = templates.filter(function (t) { return t.id === chosen; })[0];
+            var tpl = templates.get(chosen);
             var list = store.createList({
               name: nameInput.value.trim() || undefined,
               templateId: chosen,
@@ -552,8 +620,8 @@
             });
             navigate('#/list/' + list.id);
             toast(list.items.length
-              ? 'Created with ' + plural(list.items.length, 'item')
-              : 'List created');
+              ? t('new.createdWith', { count: plural(list.items.length, 'item') })
+              : t('new.created'));
           }
         }
       ]
@@ -565,61 +633,51 @@
     if (!list) return;
     var st = store.stats(list);
 
-    function entry(icon, label, onClick, danger) {
-      return h('button', {
-        class: 'menu__item' + (danger ? ' menu__item--danger' : ''), type: 'button',
-        onclick: function () { closeDialog(); setTimeout(onClick, 10); }
-      }, [
-        h('span', { class: 'menu__icon', text: icon, 'aria-hidden': 'true' }),
-        h('span', { text: label })
-      ]);
-    }
-
     var menu = h('div', { class: 'menu' }, [
-      entry('📄', 'Duplicate this list', function () { duplicateDialog(listId); }),
-      entry('✏️', 'Rename & change icon', function () { renameDialog(listId); }),
-      entry('🗂️', 'Re-sort into categories', function () {
+      menuEntry('📄', t('menu.duplicate'), function () { duplicateDialog(listId); }),
+      menuEntry('✏️', t('menu.rename'), function () { renameDialog(listId); }),
+      menuEntry('🗂️', t('menu.recategorize'), function () {
         store.recategorize(listId);
-        undoable('Categories refreshed');
+        undoable(t('toast.recategorized'));
       }),
       h('div', { class: 'menu__sep' }),
       st.packed < st.total
-        ? entry('✅', 'Mark everything packed', function () {
+        ? menuEntry('✅', t('menu.checkAll'), function () {
             store.setAllPacked(listId, true);
-            undoable('Everything checked');
+            undoable(t('toast.checked'));
           })
         : null,
       st.packed > 0
-        ? entry('⬜', 'Uncheck everything', function () {
+        ? menuEntry('⬜', t('menu.uncheckAll'), function () {
             store.setAllPacked(listId, false);
-            undoable('Everything unchecked');
+            undoable(t('toast.unchecked'));
           })
         : null,
       st.packed > 0
-        ? entry('🧹', 'Remove packed items', function () {
+        ? menuEntry('🧹', t('menu.removePacked'), function () {
             confirmDialog({
-              title: 'Remove packed items?',
-              message: plural(st.packed, 'item') + ' will be removed from this list.',
-              confirmLabel: 'Remove',
+              title: t('confirm.removePacked.title'),
+              message: t('confirm.removePacked.body', { count: plural(st.packed, 'item') }),
+              confirmLabel: t('confirm.remove'),
               onConfirm: function () {
                 store.removePacked(listId);
-                undoable(plural(st.packed, 'item') + ' removed');
+                undoable(t('toast.removed', { count: plural(st.packed, 'item') }));
               }
             });
           })
         : null,
       h('div', { class: 'menu__sep' }),
-      entry('📤', 'Share or export', function () { exportDialog(listId); }),
-      entry('🖨️', 'Print this list', function () { global.print(); }),
+      menuEntry('📤', t('menu.share'), function () { exportDialog(listId); }),
+      menuEntry('🖨️', t('menu.print'), function () { global.print(); }),
       h('div', { class: 'menu__sep' }),
-      entry('🗑️', 'Delete list', function () {
+      menuEntry('🗑️', t('menu.delete'), function () {
         confirmDialog({
-          title: 'Delete “' + list.name + '”?',
-          message: 'The list and its ' + plural(st.total, 'item') + ' will be removed. You can undo this straight after.',
+          title: t('confirm.deleteList.title', { name: list.name }),
+          message: t('confirm.deleteList.body', { count: plural(st.total, 'item') }),
           onConfirm: function () {
             store.deleteList(listId);
             if (ui.route.listId === listId) navigate('#/');
-            undoable('List deleted');
+            undoable(t('toast.listDeleted'));
           }
         });
       }, true)
@@ -632,37 +690,37 @@
     var list = store.getList(listId);
     if (!list) return;
     var nameInput = h('input', { class: 'input', type: 'text', id: 'dup-name', dir: 'auto' });
-    nameInput.value = list.name + ' (copy)';
+    nameInput.value = list.name + ' (' + t('dup.suffix') + ')';
     var keep = h('input', { type: 'checkbox', id: 'dup-keep' });
 
     var body = h('div', {}, [
       h('label', { class: 'field' }, [
-        h('span', { class: 'field__label', text: 'Name of the copy' }),
+        h('span', { class: 'field__label', text: t('dup.name') }),
         nameInput
       ]),
       h('label', { class: 'field', style: 'display:flex;gap:9px;align-items:center' }, [
         keep,
-        h('span', { text: 'Keep the ticks — copy what is already packed' })
+        h('span', { text: t('dup.keep') })
       ]),
       h('p', { class: 'field__hint', style: 'margin:0',
-               text: 'All ' + plural(list.items.length, 'item') + ' and their categories are copied.' })
+               text: t('dup.hint', { count: plural(list.items.length, 'item') }) })
     ]);
 
     openDialog({
-      title: 'Duplicate list',
+      title: t('dup.title'),
       body: body,
       focus: '#dup-name',
       actions: [
-        { label: 'Cancel' },
+        { label: t('action.cancel') },
         {
-          label: 'Duplicate', variant: 'primary',
+          label: t('dup.action'), variant: 'primary',
           onClick: function () {
             var copy = store.duplicateList(listId, {
               name: nameInput.value.trim() || undefined,
               keepPacked: keep.checked
             });
             navigate('#/list/' + copy.id);
-            toast('Copied to “' + copy.name + '”');
+            toast(t('dup.done', { name: copy.name }));
           }
         }
       ]
@@ -676,13 +734,13 @@
     var nameInput = h('input', { class: 'input', type: 'text', id: 'rename-name', dir: 'auto' });
     nameInput.value = list.name;
     var notes = h('textarea', { class: 'textarea', dir: 'auto',
-                                placeholder: 'Flight at 06:40, bag drop closes 05:40…' });
+                                placeholder: t('rename.notesPlaceholder') });
     notes.value = list.notes || '';
 
     var picker = h('div', { class: 'icon-picker' });
     ICONS.forEach(function (icon) {
       var button = h('button', {
-        type: 'button', text: icon, 'aria-label': 'Icon ' + icon,
+        type: 'button', text: icon, 'aria-label': t('rename.iconAria', { icon: icon }),
         'aria-pressed': icon === chosenIcon ? 'true' : 'false',
         onclick: function () {
           chosenIcon = icon;
@@ -696,34 +754,34 @@
 
     var body = h('div', {}, [
       h('label', { class: 'field' }, [
-        h('span', { class: 'field__label', text: 'List name' }),
+        h('span', { class: 'field__label', text: t('new.name') }),
         nameInput
       ]),
       h('div', { class: 'field' }, [
-        h('span', { class: 'field__label', text: 'Icon' }),
+        h('span', { class: 'field__label', text: t('rename.icon') }),
         picker
       ]),
       h('label', { class: 'field' }, [
-        h('span', { class: 'field__label', text: 'Notes (optional)' }),
+        h('span', { class: 'field__label', text: t('rename.notes') }),
         notes
       ])
     ]);
 
     openDialog({
-      title: 'Rename list',
+      title: t('rename.title'),
       body: body,
       focus: '#rename-name',
       actions: [
-        { label: 'Cancel' },
+        { label: t('action.cancel') },
         {
-          label: 'Save', variant: 'primary',
+          label: t('action.save'), variant: 'primary',
           onClick: function () {
             store.updateList(listId, {
               name: nameInput.value.trim() || list.name,
               icon: chosenIcon,
               notes: notes.value.trim()
             });
-            toast('Saved');
+            toast(t('toast.saved'));
           }
         }
       ]
@@ -739,54 +797,53 @@
     var nameInput = h('input', { class: 'input', type: 'text', id: 'item-name', dir: 'auto' });
     nameInput.value = item.name;
     var qtyInput = h('input', { class: 'input', type: 'number', min: '1', max: '999',
-                                inputmode: 'numeric' });
+                                inputmode: 'numeric', dir: 'ltr' });
     qtyInput.value = String(item.qty);
     var select = h('select', { class: 'select' }, cats.all.map(function (c) {
-      return h('option', { value: c.id, text: c.icon + '  ' + c.label });
+      return h('option', { value: c.id, text: c.icon + '  ' + cats.label(c.id) });
     }));
     select.value = item.category;
     var note = h('input', { class: 'input', type: 'text', dir: 'auto',
-                            placeholder: 'e.g. the blue one, in the hall cupboard' });
+                            placeholder: t('item.notePlaceholder') });
     note.value = item.note || '';
 
     var body = h('div', {}, [
       h('label', { class: 'field' }, [
-        h('span', { class: 'field__label', text: 'Item' }),
+        h('span', { class: 'field__label', text: t('item.name') }),
         nameInput
       ]),
       h('div', { class: 'row' }, [
         h('label', { class: 'field' }, [
-          h('span', { class: 'field__label', text: 'Quantity' }),
+          h('span', { class: 'field__label', text: t('item.qty') }),
           qtyInput
         ]),
         h('label', { class: 'field' }, [
-          h('span', { class: 'field__label', text: 'Category' }),
+          h('span', { class: 'field__label', text: t('item.category') }),
           select
         ])
       ]),
       h('label', { class: 'field' }, [
-        h('span', { class: 'field__label', text: 'Note (optional)' }),
+        h('span', { class: 'field__label', text: t('item.note') }),
         note
       ]),
-      h('p', { class: 'field__hint', style: 'margin:0',
-               text: 'Change the category and PackMeUp will remember it for this item next time.' })
+      h('p', { class: 'field__hint', style: 'margin:0', text: t('item.learnHint') })
     ]);
 
     openDialog({
-      title: 'Edit item',
+      title: t('item.title'),
       body: body,
       focus: '#item-name',
       actions: [
         {
-          label: 'Delete', variant: 'danger',
+          label: t('action.delete'), variant: 'danger',
           onClick: function () {
             store.deleteItem(listId, itemId);
-            undoable('“' + item.name + '” removed');
+            undoable(t('item.removed', { name: item.name }));
           }
         },
-        { label: 'Cancel' },
+        { label: t('action.cancel') },
         {
-          label: 'Save', variant: 'primary',
+          label: t('action.save'), variant: 'primary',
           onClick: function () {
             var name = nameInput.value.trim() || item.name;
             var qty = Math.max(1, Math.min(999, parseInt(qtyInput.value, 10) || 1));
@@ -794,7 +851,7 @@
             if (select.value !== item.category) {
               store.setItemCategory(listId, itemId, select.value);
             }
-            toast('Saved');
+            toast(t('toast.saved'));
           }
         }
       ]
@@ -804,32 +861,30 @@
   function bulkAddDialog(listId) {
     var area = h('textarea', {
       class: 'textarea', id: 'bulk-area', dir: 'auto', rows: '8',
-      placeholder: 'Sunglasses\n3 x socks\nPassport\nPower bank'
+      placeholder: t('bulk.placeholder')
     });
     var body = h('div', {}, [
       h('label', { class: 'field' }, [
-        h('span', { class: 'field__label', text: 'One item per line' }),
+        h('span', { class: 'field__label', text: t('bulk.label') }),
         area,
-        h('span', { class: 'field__hint',
-                    text: 'Paste a list from anywhere. Quantities like “3 x socks” are understood, ' +
-                          'and every line is filed into a category automatically.' })
+        h('span', { class: 'field__hint', text: t('bulk.hint') })
       ])
     ]);
 
     openDialog({
-      title: 'Add several items',
+      title: t('bulk.title'),
       body: body,
       focus: '#bulk-area',
       actions: [
-        { label: 'Cancel' },
+        { label: t('action.cancel') },
         {
-          label: 'Add items', variant: 'primary',
+          label: t('bulk.action'), variant: 'primary',
           onClick: function () {
             var lines = area.value.split('\n').map(function (l) { return l.trim(); })
               .filter(Boolean);
             if (!lines.length) return false;
             var added = store.addItems(listId, lines);
-            toast(plural(added.length, 'item') + ' added');
+            toast(t('bulk.added', { count: plural(added.length, 'item') }));
           }
         }
       ]
@@ -840,49 +895,41 @@
     var list = listId ? store.getList(listId) : null;
     var name = list ? slug(list.name) : 'packmeup-all-lists';
 
-    function entry(icon, label, onClick) {
-      return h('button', {
-        class: 'menu__item', type: 'button',
-        onclick: function () { closeDialog(); setTimeout(onClick, 10); }
-      }, [
-        h('span', { class: 'menu__icon', text: icon, 'aria-hidden': 'true' }),
-        h('span', { text: label })
-      ]);
-    }
-
     var menu = h('div', { class: 'menu' }, [
-      list ? entry('📋', 'Copy list as text', function () {
+      list ? menuEntry('📋', t('export.copyText'), function () {
         copyText(store.listToText(listId))
-          .then(function () { toast('Copied to clipboard'); })
-          .catch(function () { toast('Could not copy — try the download instead'); });
+          .then(function () { toast(t('export.copied')); })
+          .catch(function () { toast(t('export.copyFailed')); });
       }) : null,
-      list ? entry('📝', 'Download as text file', function () {
+      list ? menuEntry('📝', t('export.downloadText'), function () {
         download(name + '.txt', store.listToText(listId), 'text/plain');
-        toast('Downloaded');
+        toast(t('export.downloaded'));
       }) : null,
-      entry('💾', list ? 'Download as backup file (.json)' : 'Download all lists (.json)', function () {
+      menuEntry('💾', list ? t('export.downloadJson') : t('export.downloadJsonAll'), function () {
         download(name + '.json', list ? store.exportList(listId) : store.exportAll());
-        toast('Downloaded');
+        toast(t('export.downloaded'));
       }),
       h('div', { class: 'menu__sep' }),
-      h('p', { class: 'field__hint', style: 'margin:0 12px',
-               text: 'A backup file can be imported on any other device from the ⋯ menu.' })
+      h('p', { class: 'field__hint', style: 'margin:0 12px', text: t('export.hint') })
     ]);
 
-    openDialog({ title: list ? 'Share “' + list.name + '”' : 'Export', body: menu });
+    openDialog({
+      title: list ? t('export.title', { name: list.name }) : t('export.titleAll'),
+      body: menu
+    });
   }
 
   function importDialog() {
     var file = h('input', { class: 'input', type: 'file', accept: '.json,application/json' });
-    var area = h('textarea', { class: 'textarea', placeholder: '…or paste the contents of a backup file here' });
+    var area = h('textarea', { class: 'textarea', placeholder: t('import.pastePlaceholder') });
 
     function run(text) {
       try {
         var count = store.importJSON(text);
         closeDialog();
-        toast(plural(count, 'list') + ' imported');
+        toast(t('import.done', { count: plural(count, 'list') }));
       } catch (err) {
-        toast(err.message || 'Import failed');
+        toast(err.message || t('import.failed'));
       }
     }
 
@@ -896,26 +943,25 @@
 
     var body = h('div', {}, [
       h('label', { class: 'field' }, [
-        h('span', { class: 'field__label', text: 'Choose a PackMeUp backup file' }),
+        h('span', { class: 'field__label', text: t('import.file') }),
         file
       ]),
       h('label', { class: 'field' }, [
-        h('span', { class: 'field__label', text: 'Or paste it' }),
+        h('span', { class: 'field__label', text: t('import.paste') }),
         area
       ]),
-      h('p', { class: 'field__hint', style: 'margin:0',
-               text: 'Imported lists are added alongside what you already have — nothing is overwritten.' })
+      h('p', { class: 'field__hint', style: 'margin:0', text: t('import.hint') })
     ]);
 
     openDialog({
-      title: 'Import lists',
+      title: t('import.title'),
       body: body,
       actions: [
-        { label: 'Cancel' },
+        { label: t('action.cancel') },
         {
-          label: 'Import', variant: 'primary', close: false,
+          label: t('import.action'), variant: 'primary', close: false,
           onClick: function () {
-            if (!area.value.trim()) { toast('Choose a file or paste a backup first'); return false; }
+            if (!area.value.trim()) { toast(t('import.needFile')); return false; }
             run(area.value);
             return false;
           }
@@ -925,48 +971,35 @@
   }
 
   function appMenuDialog() {
-    function entry(icon, label, onClick) {
-      return h('button', {
-        class: 'menu__item', type: 'button',
-        onclick: function () { closeDialog(); setTimeout(onClick, 10); }
-      }, [
-        h('span', { class: 'menu__icon', text: icon, 'aria-hidden': 'true' }),
-        h('span', { text: label })
-      ]);
-    }
-
+    var theme = store.getSetting('theme') || 'system';
     var menu = h('div', { class: 'menu' }, [
-      entry('➕', 'New list', newListDialog),
-      entry('📥', 'Import lists from a backup', importDialog),
-      entry('💾', 'Export everything', function () { exportDialog(null); }),
+      menuEntry('➕', t('menu.newList'), newListDialog),
+      menuEntry('📥', t('menu.import'), importDialog),
+      menuEntry('💾', t('menu.exportAll'), function () { exportDialog(null); }),
       h('div', { class: 'menu__sep' }),
-      entry('◐', 'Theme: ' + (store.getSetting('theme') || 'system'), cycleTheme),
-      entry('ℹ️', 'About PackMeUp', aboutDialog)
+      menuEntry('🌐', t('menu.language', { language: i18n.meta().label }), languageDialog),
+      menuEntry('◐', t('menu.theme', { theme: t('theme.' + theme) }), cycleTheme),
+      menuEntry('ℹ️', t('menu.about'), aboutDialog)
     ]);
-    openDialog({ title: 'PackMeUp', body: menu });
+    openDialog({ title: t('app.name'), body: menu });
   }
 
   function aboutDialog() {
     var lists = store.getLists();
     var items = lists.reduce(function (sum, l) { return sum + l.items.length; }, 0);
     var body = h('div', {}, [
-      h('p', { style: 'margin-top:0;color:var(--text-muted)',
-               text: 'PackMeUp keeps your packing lists for trips, reserve duty and anything ' +
-                     'else you need a bag for. Items sort themselves into categories, you tick ' +
-                     'them off as they go into the luggage, and you duplicate a list when the ' +
-                     'next trip comes around.' }),
-      h('p', { style: 'color:var(--text-muted)',
-               text: 'Everything is stored on this device only — no account, no server, and it ' +
-                     'keeps working with no signal. Use Export to move your lists to another device.' }),
-      h('p', { class: 'field__hint',
-               text: 'Right now: ' + plural(lists.length, 'list') + ', ' + plural(items, 'item') + '.' }),
+      h('p', { style: 'margin-top:0;color:var(--text-muted)', text: t('about.p1') }),
+      h('p', { style: 'color:var(--text-muted)', text: t('about.p2') }),
+      h('p', { class: 'field__hint', text: t('about.stats', {
+        lists: plural(lists.length, 'list'), items: plural(items, 'item')
+      }) }),
       store.storageAvailable() ? null : h('p', {
-        style: 'color:var(--danger)',
-        text: 'Warning: this browser is blocking local storage, so changes will not survive a reload. ' +
-              'Private browsing mode is the usual cause.'
+        style: 'color:var(--danger)', text: t('about.noStorage')
       })
     ]);
-    openDialog({ title: 'About', body: body, actions: [{ label: 'Close' }] });
+    openDialog({
+      title: t('about.title'), body: body, actions: [{ label: t('action.close') }]
+    });
   }
 
   /* -------------------------------------------------------------- render */
@@ -979,7 +1012,7 @@
     if (onList) {
       renderList();
     } else {
-      $('topbar-title').textContent = 'PackMeUp';
+      $('topbar-title').textContent = t('app.name');
       renderHome();
     }
   }
@@ -1011,7 +1044,7 @@
       renderList();
     }, 120));
 
-    Array.prototype.forEach.call(document.querySelectorAll('.chip[data-filter]'), function (chip) {
+    each('.chip[data-filter]', function (chip) {
       chip.addEventListener('click', function () {
         ui.listFilter = chip.dataset.filter;
         renderList();
@@ -1030,9 +1063,9 @@
       input.focus();
       if (added.length === 1) {
         var category = cats.get(added[0].category);
-        toast('Added to ' + category.icon + ' ' + category.label);
+        toast(t('add.addedTo', { category: category.icon + ' ' + cats.label(category.id) }));
       } else if (added.length > 1) {
-        toast(plural(added.length, 'item') + ' added');
+        toast(t('add.addedMany', { count: plural(added.length, 'item') }));
       }
     });
 
@@ -1056,10 +1089,9 @@
       if (event.key === 'n' && !event.metaKey && !event.ctrlKey) {
         event.preventDefault();
         newListDialog();
-      } else if (event.key === '/' ) {
+      } else if (event.key === '/') {
         event.preventDefault();
-        var box = ui.route.view === 'list' ? $('list-search') : $('home-search');
-        box.focus();
+        (ui.route.view === 'list' ? $('list-search') : $('home-search')).focus();
       } else if (event.key === 'Escape' && ui.route.view === 'list') {
         navigate('#/');
       }
@@ -1069,7 +1101,8 @@
     global.addEventListener('storage', function (event) {
       if (event.key && event.key.indexOf('packmeup') === 0) {
         store.load();
-        applyTheme();
+        startLanguage();
+        applyLanguage();
         render();
       }
     });
@@ -1083,9 +1116,16 @@
     });
   }
 
+  /* Saved choice first, otherwise the language of the device. */
+  function startLanguage() {
+    var saved = store.getSetting('lang');
+    i18n.setLang(saved && i18n.has(saved) ? saved : i18n.detect());
+  }
+
   function start() {
     store.load();
-    applyTheme();
+    startLanguage();
+    applyLanguage();
     wire();
     store.subscribe(render);
     ui.route = parseHash();

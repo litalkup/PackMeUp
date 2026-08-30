@@ -1,7 +1,9 @@
 {
+  "lang": "en",
+  "dir": "auto",
   "name": "PackMeUp — packing lists",
   "short_name": "PackMeUp",
-  "description": "Packing lists for trips, reserve duty and everything else. Items sort themselves into categories, tick them off as you pack, duplicate a list for next time.",
+  "description": "Packing lists for trips, reserve duty and everything else, in English or Hebrew. Items sort themselves into categories, tick them off as you pack, duplicate a list for next time.",
   "start_url": ".",
   "scope": ".",
   "id": "packmeup",

@@ -7,6 +7,9 @@ toiletries, documents, electronics, military gear and so on. Tick things off as
 they go into the luggage, and when the next trip comes around, duplicate the
 list instead of starting over.
 
+The whole app speaks **English and Hebrew** — interface, templates and layout
+direction included — and picks your device's language on first run.
+
 It's a web app: it installs onto a phone home screen like a native app, and it
 opens in any browser on a computer. No account, no server, works with no signal.
 
@@ -30,8 +33,38 @@ opens in any browser on a computer. No account, no server, works with no signal.
   print-friendly view.
 - **Export and import** — move lists between devices as a `.json` backup, or
   copy a list out as plain text.
-- **English and Hebrew** item names are both recognised by the categoriser, and
-  right-to-left text renders correctly.
+- **Fully bilingual** — see below.
+
+## Hebrew and English
+
+The language is picked from the device on first run and can be changed any time
+under **⋯ → שפה / Language**; the choice is remembered. Switching affects:
+
+- **The whole interface** — every button, menu, dialog, empty state and toast.
+- **Direction** — Hebrew sets `dir="rtl"` on the document and the layout mirrors:
+  the back arrow turns around, checkboxes move to the right of each row, progress
+  bars fill from the right. The stylesheet uses logical properties throughout, so
+  there is one layout rather than two.
+- **Templates** — the starter lists are written separately in each language, so
+  the Hebrew *מילואים* list contains מדי ב, כומתה and מימייה rather than
+  translated English strings.
+- **Categories** — category names, the plural forms ("פריט אחד" vs "3 פריטים"),
+  relative dates and the copy suffix ("עותק") all follow the language.
+
+Categorisation works on Hebrew items regardless of the interface language, and a
+single list can freely mix the two. Hebrew matching accounts for the way the
+language actually gets typed:
+
+| you type | recognised as |
+| --- | --- |
+| `גרביים` / `גרב` | the same item — plural and dual endings are stripped |
+| `הדרכון`, `ומגבות`, `שהתרופות` | prefixes ה/ו/ב/ל/כ/מ/ש are peeled off (up to two) |
+| `3 גרביים` | quantity 3, item `גרביים` |
+| `לתיק גב` | the phrase *תיק גב*, prefix and all |
+
+Prefix letters are only ever stripped from what you type, never from the
+keyword list, so real words that start with those letters (מגבת, מזרן, כובע)
+keep working.
 
 ## Running it
 
@@ -74,7 +107,8 @@ consequences worth knowing:
 
 ```
 index.html              markup and the app shell
-css/styles.css          all styling, light and dark themes
+css/styles.css          all styling, light and dark themes, both directions
+js/i18n.js              English and Hebrew strings, plurals, text direction
 js/categories.js        the categories and the keyword scoring that assigns them
 js/templates.js         the starter lists
 js/store.js             state, localStorage persistence, undo, import/export
@@ -92,6 +126,6 @@ tools/make_icons.py     regenerates the PNG icons from code
 node tools/test.js
 ```
 
-Covers categorisation (including the Hebrew keywords and remembered manual
-corrections), quantity parsing, list duplication, undo, persistence and the
-import/export round trip.
+Covers categorisation (Hebrew prefixes, plurals and phrases; remembered manual
+corrections), quantity parsing in both languages, the Hebrew interface and
+templates, list duplication, undo, persistence and the import/export round trip.

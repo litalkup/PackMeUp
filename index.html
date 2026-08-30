@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="en" data-theme="light">
+<html lang="en" dir="ltr" data-theme="light">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>PackMeUp — packing lists that sort themselves</title>
-<meta name="description" content="Packing lists for trips, reserve duty and anything else. Items sort themselves into categories, tick them off as you pack, duplicate a list for the next time. Works offline, on phone and desktop.">
+<meta name="description" content="Packing lists for trips, reserve duty and anything else. Items sort themselves into categories, tick them off as you pack, duplicate a list for the next time. English and Hebrew, works offline, on phone and desktop.">
 <meta name="theme-color" content="#0f8f8b" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#10161c" media="(prefers-color-scheme: dark)">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -19,28 +19,29 @@
 
 <div class="app">
   <header class="topbar">
-    <button class="icon-btn" id="back-btn" type="button" aria-label="Back to all lists" hidden>←</button>
+    <button class="icon-btn" id="back-btn" type="button" data-i18n-aria="nav.back" aria-label="Back" hidden>←</button>
     <h1 class="topbar__title">
       <span class="topbar__logo" aria-hidden="true">🧳</span>
       <span id="topbar-title">PackMeUp</span>
     </h1>
     <span class="topbar__spacer"></span>
-    <button class="icon-btn" id="theme-btn" type="button" aria-label="Switch colour theme" title="Switch colour theme">◐</button>
-    <button class="icon-btn" id="app-menu-btn" type="button" aria-label="More options" title="More options">⋯</button>
+    <button class="icon-btn" id="theme-btn" type="button" data-i18n-aria="nav.theme" aria-label="Theme">◐</button>
+    <button class="icon-btn" id="app-menu-btn" type="button" data-i18n-aria="nav.more" data-i18n-title="nav.more" aria-label="More">⋯</button>
   </header>
 
   <!-- ------------------------------------------------------- home view -->
   <main class="view" id="view-home">
     <div class="toolbar">
       <label class="search">
-        <span class="visually-hidden">Search your lists</span>
-        <input class="input" id="home-search" type="search" placeholder="Search lists and items" autocomplete="off">
+        <span class="visually-hidden" data-i18n="home.search">Search lists and items</span>
+        <input class="input" id="home-search" type="search" data-i18n-placeholder="home.search"
+               placeholder="Search lists and items" autocomplete="off">
       </label>
-      <button class="btn btn--primary" id="new-list-btn" type="button">+ New list</button>
+      <button class="btn btn--primary" id="new-list-btn" type="button" data-i18n="home.newList">+ New list</button>
     </div>
 
     <div class="section-head" id="home-heading" hidden>
-      <h2>Your lists</h2>
+      <h2 data-i18n="home.yourLists">Your lists</h2>
       <span class="count" id="home-count"></span>
     </div>
 
@@ -60,20 +61,22 @@
         </div>
         <span class="list-head__pct" id="list-pct">0%</span>
       </div>
-      <div class="progress" id="list-progress" role="progressbar" aria-label="Packing progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+      <div class="progress" id="list-progress" role="progressbar" data-i18n-aria="list.progress"
+           aria-label="Packing progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
         <div class="progress__bar" id="list-progress-bar"></div>
       </div>
     </section>
 
     <div class="toolbar">
-      <div class="chips" role="group" aria-label="Filter items">
-        <button class="chip" type="button" data-filter="all" aria-pressed="true">All</button>
-        <button class="chip" type="button" data-filter="todo" aria-pressed="false">To pack</button>
-        <button class="chip" type="button" data-filter="packed" aria-pressed="false">Packed</button>
+      <div class="chips" role="group" id="list-filters" data-i18n-aria="list.filter.aria" aria-label="Filter">
+        <button class="chip" type="button" data-filter="all" data-i18n="list.filter.all" aria-pressed="true">All</button>
+        <button class="chip" type="button" data-filter="todo" data-i18n="list.filter.todo" aria-pressed="false">To pack</button>
+        <button class="chip" type="button" data-filter="packed" data-i18n="list.filter.packed" aria-pressed="false">Packed</button>
       </div>
       <label class="search">
-        <span class="visually-hidden">Search items in this list</span>
-        <input class="input" id="list-search" type="search" placeholder="Search items" autocomplete="off">
+        <span class="visually-hidden" data-i18n="list.search.aria">Search items in this list</span>
+        <input class="input" id="list-search" type="search" data-i18n-placeholder="list.search"
+               placeholder="Search items" autocomplete="off">
       </label>
     </div>
 
@@ -82,12 +85,12 @@
 
     <form class="addbar" id="add-form" autocomplete="off">
       <div class="addbar__field">
-        <label class="visually-hidden" for="add-input">Add an item</label>
-        <input class="input" id="add-input" type="text" dir="auto"
-               placeholder="Add an item — try “3 x socks”" enterkeyhint="done">
+        <label class="visually-hidden" for="add-input" data-i18n="add.label">Add an item</label>
+        <input class="input" id="add-input" type="text" dir="auto" data-i18n-placeholder="add.placeholder"
+               placeholder="Add an item" enterkeyhint="done">
       </div>
-      <button class="btn btn--primary" type="submit" aria-label="Add item">Add</button>
-      <button class="icon-btn" id="bulk-btn" type="button" aria-label="Add several items at once" title="Add several items at once">☰</button>
+      <button class="btn btn--primary" id="add-btn" type="submit" data-i18n="add.button">Add</button>
+      <button class="icon-btn" id="bulk-btn" type="button" data-i18n-aria="add.bulk" data-i18n-title="add.bulk" aria-label="Add several">☰</button>
     </form>
   </main>
 </div>
@@ -95,7 +98,7 @@
 <dialog id="dialog" aria-labelledby="dialog-title">
   <div class="dialog__head">
     <h2 class="dialog__title" id="dialog-title">Dialog</h2>
-    <button class="icon-btn" type="button" data-close aria-label="Close">✕</button>
+    <button class="icon-btn" type="button" data-close data-i18n-aria="action.close" aria-label="Close">✕</button>
   </div>
   <div class="dialog__body" id="dialog-body"></div>
   <div class="dialog__foot" id="dialog-foot"></div>
@@ -106,6 +109,7 @@
   <button class="toast__action" id="toast-action" type="button" hidden></button>
 </div>
 
+<script src="js/i18n.js"></script>
 <script src="js/categories.js"></script>
 <script src="js/templates.js"></script>
 <script src="js/store.js"></script>
