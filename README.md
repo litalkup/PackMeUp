@@ -173,14 +173,55 @@ full-screen with its own icon.
 Source: GitHub Actions**; the site then lives at
 `https://<user>.github.io/PackMeUp/`.
 
+## Having the same list on two devices
+
+Two ways, both under the **⋯** menu.
+
+**Sync through your own Google Drive.** The lists are kept in one file in the
+app's private folder in your Drive — the *appdata* space, which no other app
+and none of your other files can see. Nothing passes through a server of mine;
+each device signs in to your Google account and reads that one file.
+
+It needs a one-time setup, because Google only lets an app reach a Drive
+account through a client ID **you** create:
+
+1. In the [Google Cloud console](https://console.cloud.google.com), create a
+   project and enable the **Google Drive API**.
+2. Under **Clients**, create an **OAuth client ID** of type *Web application*,
+   with your site (e.g. `https://litalkup.github.io`) as an authorised
+   JavaScript origin.
+3. On the consent screen, add yourself as a **test user**.
+4. Paste the client ID into **⋯ → Sync with Google Drive**.
+
+The first sign-in shows an "unverified app" warning — publishing an app with
+Drive access needs a Google review, which is not worth it for one person's
+packing lists. Choose *Advanced* and continue; it is your own app reaching your
+own Drive. Turn on *sync by itself when something changes* and each device
+syncs on open and a few seconds after any edit.
+
+**Or move a file by hand.** **⋯ → Export everything** on one device, then
+**⋯ → Restore from a backup file** on the other.
+
+Either way the two sides are **merged**, not stacked: a list keeps its identity
+across devices, every item carries its own timestamp, and every deletion leaves
+a tombstone. So
+
+- the same list coming back is recognised rather than copied,
+- for an item edited on both, the newer edit wins,
+- an item added on either device arrives,
+- an item deleted on one device stays deleted, and
+- an item typed independently on both under the same name stays one item.
+
+Syncing the same file twice changes nothing.
+
 ## Where the data lives
 
 Everything is stored in the browser's `localStorage`, on the device, under the
 key `packmeup.v1`. Nothing is uploaded and there is nothing to sign in to. Two
 consequences worth knowing:
 
-- Lists do not sync between your phone and your computer by themselves. Use
-  **⋯ → Export everything** on one device and **⋯ → Import** on the other.
+- Lists do not travel between devices by themselves until you set up Drive
+  sync, or move a backup file across, as described above.
 - Clearing the browser's site data for this app deletes the lists, so keep an
   export if a list matters.
 
@@ -193,7 +234,8 @@ js/i18n.js              English and Hebrew strings, plurals, text direction
 js/notes.js             reading a note pasted or shared from another app
 js/categories.js        the categories and the keyword scoring that assigns them
 js/templates.js         the starter lists
-js/store.js             state, localStorage persistence, undo, import/export
+js/store.js             state, localStorage persistence, undo, merging, import/export
+js/drive.js             sync through the app's private folder in your Drive
 js/app.js               views, rendering, dialogs, routing
 sw.js                   service worker: offline app shell
 manifest.webmanifest    installability (name, icons, colours)

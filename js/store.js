@@ -9,7 +9,7 @@
   'use strict';
 
   var STORAGE_KEY = 'packmeup.v1';
-  var SCHEMA_VERSION = 1;
+  var SCHEMA_VERSION = 2;
 
   var cat = global.PMU.categories;
   var templates = global.PMU.templates;
@@ -66,20 +66,25 @@
       version: SCHEMA_VERSION,
       lists: [],
       learned: {},                       /* item name -> category chosen by the user */
+      removedLists: {},                  /* list id -> when it was deleted */
       settings: { theme: 'system', lang: null, hidePacked: false }
     };
   }
 
   function migrate(raw) {
     var data = Object.assign(defaults(), raw || {});
+    data.removedLists = data.removedLists || {};
     data.lists = (data.lists || []).map(function (list) {
+      var listUpdated = list.updatedAt || list.createdAt || now();
       return {
         id: list.id || uid(),
         name: list.name || 'Untitled list',
         icon: list.icon || '🧳',
         notes: list.notes || '',
         createdAt: list.createdAt || now(),
-        updatedAt: list.updatedAt || list.createdAt || now(),
+        updatedAt: listUpdated,
+        /* item id -> when it was deleted, so a merge does not resurrect it */
+        removed: list.removed || {},
         items: (list.items || []).map(function (item) {
           var qty = item.qty > 0 ? item.qty : 1;
           /* Lists saved before quantities could be part-packed carry a
@@ -93,7 +98,8 @@
             qty: qty,
             category: cat.get(item.category).id,
             packedQty: Math.max(0, Math.min(qty, Math.round(done) || 0)),
-            note: item.note || ''
+            note: item.note || '',
+            updatedAt: item.updatedAt || listUpdated
           };
         })
       };
@@ -173,6 +179,18 @@
     list.updatedAt = now();
   }
 
+  /* An item carries its own timestamp so two devices can be merged item by
+     item rather than list against list. */
+  function touchItem(list, item) {
+    item.updatedAt = now();
+    touch(list);
+  }
+
+  function forget(list, itemId) {
+    list.removed[itemId] = now();
+    touch(list);
+  }
+
   /*
    * A line to add is either plain text, or { text, packed } - the shape a note
    * imported from elsewhere produces, where a ticked line is already packed.
@@ -195,7 +213,8 @@
       qty: parsed.qty,
       category: cat.categorize(parsed.name, state.learned),
       packedQty: linePacked(line) ? parsed.qty : 0,
-      note: ''
+      note: '',
+      updatedAt: now()
     };
   }
 
@@ -217,6 +236,7 @@
       notes: '',
       createdAt: now(),
       updatedAt: now(),
+      removed: {},
       items: []
     };
     if (template) {
@@ -237,6 +257,7 @@
     if (!source) return null;
     var copy = clone(source);
     copy.id = uid();
+    copy.removed = {};
     copy.name = options.name || nextCopyName(source.name);
     copy.createdAt = now();
     copy.updatedAt = now();
@@ -284,6 +305,7 @@
     var list = getList(id);
     if (!list) return null;
     checkpoint('Deleted "' + list.name + '"');
+    state.removedLists[id] = now();
     state.lists = state.lists.filter(function (l) { return l.id !== id; });
     commit();
     return list;
@@ -334,7 +356,7 @@
     Object.keys(changes).forEach(function (key) { item[key] = changes[key]; });
     if (item.qty < 1) item.qty = 1;
     item.packedQty = Math.max(0, Math.min(item.qty, item.packedQty || 0));
-    touch(list);
+    touchItem(list, item);
     commit();
     return item;
   }
@@ -348,7 +370,7 @@
     item.category = cat.get(categoryId).id;
     item.categoryPinned = true;
     state.learned[cat.normalize(item.name)] = item.category;
-    touch(list);
+    touchItem(list, item);
     commit();
     return item;
   }
@@ -360,7 +382,7 @@
     if (!item) return null;
     var full = packed === undefined ? !isPacked(item) : !!packed;
     item.packedQty = full ? item.qty : 0;
-    touch(list);
+    touchItem(list, item);
     commit();
     return item;
   }
@@ -375,7 +397,7 @@
     var item = getItem(list, itemId);
     if (!item) return null;
     item.packedQty = isPacked(item) ? 0 : item.packedQty + 1;
-    touch(list);
+    touchItem(list, item);
     commit();
     return item;
   }
@@ -387,7 +409,7 @@
     var item = getItem(list, itemId);
     if (!item) return null;
     item.packedQty = Math.max(0, Math.min(item.qty, Math.round(count) || 0));
-    touch(list);
+    touchItem(list, item);
     commit();
     return item;
   }
@@ -399,7 +421,7 @@
     if (!item) return null;
     checkpoint('Removed "' + item.name + '"');
     list.items = list.items.filter(function (i) { return i.id !== itemId; });
-    touch(list);
+    forget(list, itemId);
     commit();
     return item;
   }
@@ -492,7 +514,7 @@
     delete item.categoryPinned;
     item.packedQty = 0;
     item.note = '';
-    touch(list);
+    touchItem(list, item);
     commit();
     return item;
   }
@@ -501,7 +523,10 @@
     var list = getList(listId);
     if (!list) return null;
     checkpoint(packed ? 'Checked everything' : 'Unchecked everything');
-    list.items.forEach(function (item) { item.packedQty = packed ? item.qty : 0; });
+    list.items.forEach(function (item) {
+      item.packedQty = packed ? item.qty : 0;
+      item.updatedAt = now();
+    });
     touch(list);
     commit();
     return list;
@@ -511,6 +536,7 @@
     var list = getList(listId);
     if (!list) return null;
     checkpoint('Removed packed items');
+    list.items.filter(isPacked).forEach(function (item) { list.removed[item.id] = now(); });
     list.items = list.items.filter(function (item) { return !isPacked(item); });
     touch(list);
     commit();
@@ -525,6 +551,7 @@
     list.items.forEach(function (item) {
       if (item.categoryPinned) return;
       item.category = cat.categorize(item.name, state.learned);
+      item.updatedAt = now();
     });
     touch(list);
     commit();
@@ -586,6 +613,7 @@
       version: SCHEMA_VERSION,
       exportedAt: now(),
       lists: state.lists,
+      removedLists: state.removedLists,
       learned: state.learned
     }, null, 2);
   }
@@ -617,7 +645,122 @@
     return lines.join('\n').trim() + '\n';
   }
 
-  /* Imports an export file. Lists are added, never overwritten. */
+  /* ------------------------------------------------------------- merging */
+
+  /*
+   * Two devices holding the same lists are merged rather than stacked.
+   *
+   * Identity is what makes that possible: ids are preserved across an export,
+   * so the same list arriving from another device is recognised as the same
+   * list. Within it, every item carries its own timestamp and every deletion
+   * leaves a tombstone, so the merge is decided item by item:
+   *
+   *   - an item on both sides -> the newer edit wins
+   *   - an item on one side only -> it is kept, unless the other side deleted
+   *     it after that edit
+   *   - an item added independently on both devices under the same name ->
+   *     treated as one item, not two
+   */
+  function newer(a, b) {
+    return String(a || '') > String(b || '') ? a : b;
+  }
+
+  function mergeList(local, incoming) {
+    var incomingIsNewer = String(incoming.updatedAt || '') > String(local.updatedAt || '');
+    if (incomingIsNewer) {
+      local.name = incoming.name;
+      local.icon = incoming.icon;
+      local.notes = incoming.notes;
+    }
+
+    var byId = {};
+    var byName = {};
+    local.items.forEach(function (item) {
+      byId[item.id] = item;
+      byName[cat.normalize(item.name)] = item;
+    });
+
+    /* deletions from the other device */
+    Object.keys(incoming.removed || {}).forEach(function (itemId) {
+      var when = incoming.removed[itemId];
+      var mine = byId[itemId];
+      if (mine && String(when) > String(mine.updatedAt || '')) {
+        delete byId[itemId];
+        delete byName[cat.normalize(mine.name)];
+        local.items = local.items.filter(function (i) { return i.id !== itemId; });
+      }
+      local.removed[itemId] = newer(local.removed[itemId], when);
+    });
+
+    incoming.items.forEach(function (item) {
+      var mine = byId[item.id] || byName[cat.normalize(item.name)];
+      if (mine) {
+        if (String(item.updatedAt || '') > String(mine.updatedAt || '')) {
+          mine.name = item.name;
+          mine.qty = item.qty;
+          mine.category = item.category;
+          mine.categoryPinned = item.categoryPinned;
+          mine.packedQty = item.packedQty;
+          mine.note = item.note;
+          mine.updatedAt = item.updatedAt;
+        }
+        return;
+      }
+      /* deleted here after the other device last touched it */
+      var tomb = local.removed[item.id];
+      if (tomb && String(tomb) >= String(item.updatedAt || '')) return;
+
+      local.items.push(item);
+      byId[item.id] = item;
+      byName[cat.normalize(item.name)] = item;
+    });
+
+    local.updatedAt = newer(local.updatedAt, incoming.updatedAt);
+    return local;
+  }
+
+  /* Folds another device's whole state into this one. */
+  function mergeState(incoming) {
+    var summary = { lists: 0, merged: 0, added: 0 };
+    var byId = {};
+    state.lists.forEach(function (list) { byId[list.id] = list; });
+
+    Object.keys(incoming.removedLists || {}).forEach(function (listId) {
+      var when = incoming.removedLists[listId];
+      var mine = byId[listId];
+      if (mine && String(when) > String(mine.updatedAt || '')) {
+        state.lists = state.lists.filter(function (l) { return l.id !== listId; });
+        delete byId[listId];
+      }
+      state.removedLists[listId] = newer(state.removedLists[listId], when);
+    });
+
+    (incoming.lists || []).forEach(function (list) {
+      summary.lists++;
+      var mine = byId[list.id];
+      if (mine) {
+        mergeList(mine, list);
+        summary.merged++;
+        return;
+      }
+      var tomb = state.removedLists[list.id];
+      if (tomb && String(tomb) >= String(list.updatedAt || '')) return;
+      state.lists.unshift(list);
+      byId[list.id] = list;
+      summary.added++;
+    });
+
+    Object.keys(incoming.learned || {}).forEach(function (key) {
+      state.learned[key] = incoming.learned[key];
+    });
+    return summary;
+  }
+
+  /*
+   * Imports an export file, merging it into what is already here. Lists keep
+   * their ids across devices, so importing the same backup twice settles
+   * rather than piling up copies.
+   */
   function importJSON(text) {
     var data;
     try {
@@ -630,22 +773,18 @@
       throw new Error(i18n.t('import.noLists'));
     }
     checkpoint('Imported lists');
-    var imported = migrate({ lists: incoming }).lists;
-    imported.forEach(function (list) {
-      list.id = uid();
-      if (state.lists.some(function (l) { return l.name === list.name; })) {
-        list.name = nextCopyName(list.name);
-      }
-      list.items.forEach(function (item) { item.id = uid(); });
-      state.lists.unshift(list);
+    var prepared = migrate({
+      lists: incoming,
+      removedLists: data.removedLists,
+      learned: data.learned
     });
-    if (data.learned && typeof data.learned === 'object') {
-      Object.keys(data.learned).forEach(function (key) {
-        state.learned[key] = data.learned[key];
-      });
-    }
+    var summary = mergeState({
+      lists: prepared.lists,
+      removedLists: prepared.removedLists,
+      learned: prepared.learned
+    });
     commit();
-    return imported.length;
+    return summary;
   }
 
   global.PMU = global.PMU || {};
@@ -689,6 +828,7 @@
     undo: undo,
     canUndo: canUndo,
 
+    mergeState: mergeState,
     exportAll: exportAll,
     exportList: exportList,
     listToText: listToText,

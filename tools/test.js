@@ -23,7 +23,8 @@ sandbox.localStorage = {
   removeItem: function (k) { delete storage[k]; }
 };
 vm.createContext(sandbox);
-['js/i18n.js', 'js/notes.js', 'js/categories.js', 'js/templates.js', 'js/store.js'].forEach(function (file) {
+['js/i18n.js', 'js/notes.js', 'js/categories.js', 'js/templates.js', 'js/store.js',
+ 'js/drive.js'].forEach(function (file) {
   vm.runInContext(fs.readFileSync(path.join(root, file), 'utf8'), sandbox, { filename: file });
 });
 
@@ -275,19 +276,157 @@ check('english labels come back', cats.label('clothing'), 'Clothing');
 check('templates keep both languages',
   templates.localized(templates.get('travel').name, 'he'), 'טיול בחו״ל');
 
+console.log('merging two devices');
+/* Device A makes a list and ticks something. */
+var deviceA = store.createList({ name: 'Copenhagen', templateId: 'blank' });
+store.addItems(deviceA.id, ['passport', '3 socks', 'toothbrush']);
+var onA = store.getList(deviceA.id);
+store.toggleItem(deviceA.id, onA.items[0].id);
+var fromA = store.exportAll();
+
+/* Device B is the same list, edited differently: another item ticked, one
+   added, one deleted. Time has to move for the newer edit to be newer. */
+var later = new Date(Date.now() + 60000).toISOString();
+var b = JSON.parse(fromA);
+var listB = b.lists.filter(function (l) { return l.id === deviceA.id; })[0];
+listB.updatedAt = later;
+listB.items[1].packedQty = 3;            /* socks packed on B */
+listB.items[1].updatedAt = later;
+listB.removed = {};
+listB.removed[listB.items[2].id] = later; /* toothbrush deleted on B */
+listB.items.splice(2, 1);
+listB.items.push({ id: 'b-only', name: 'umbrella', qty: 1, category: 'gear',
+                   packedQty: 0, note: '', updatedAt: later });
+
+store.importJSON(JSON.stringify(b));
+var merged = store.getList(deviceA.id);
+var names = merged.items.map(function (i) { return i.name; });
+check('the list is still one list', store.getLists().filter(function (l) {
+  return l.name === 'Copenhagen'; }).length, 1);
+check('an item added on the other device arrives', names.indexOf('umbrella') !== -1, true);
+check('an item deleted on the other device goes', names.indexOf('toothbrush'), -1);
+check('a tick made here survives', store.isPacked(merged.items.filter(function (i) {
+  return i.name === 'passport'; })[0]), true);
+check('a tick made there arrives', merged.items.filter(function (i) {
+  return i.name === 'socks'; })[0].packedQty, 3);
+check('nothing is duplicated', names.length, 3);
+
+/* An item typed on both devices under the same name is one item. */
+var twin = store.createList({ name: 'Twins', templateId: 'blank' });
+store.addItem(twin.id, 'sunglasses');
+var twinFile = JSON.parse(store.exportAll());
+var twinList = twinFile.lists.filter(function (l) { return l.id === twin.id; })[0];
+twinList.items = [{ id: 'other-device-id', name: 'sunglasses', qty: 1,
+                    category: 'clothing', packedQty: 0, note: '', updatedAt: later }];
+twinList.updatedAt = later;
+store.importJSON(JSON.stringify(twinFile));
+check('the same item typed on both devices stays one',
+  store.getList(twin.id).items.length, 1);
+
+/* A list deleted here does not come back from an older file. */
+var doomed = store.createList({ name: 'Deleted list', templateId: 'blank' });
+var doomedFile = store.exportAll();
+store.deleteList(doomed.id);
+store.importJSON(doomedFile);
+check('a list deleted here is not resurrected',
+  store.getLists().filter(function (l) { return l.id === doomed.id; }).length, 0);
+
+console.log('syncing through drive');
+/*
+ * A stand-in for Drive: one file in memory. The sync code above the transport
+ * is the real thing, so this exercises the round trip - pull, merge, push.
+ */
+var drive = sandbox.PMU.drive;
+var cloud = { file: null, id: null, writes: 0 };
+drive.net.requestToken = function () {
+  return Promise.resolve({ value: 'test-token', expiresAt: Date.now() + 3600000 });
+};
+drive.net.find = function () {
+  return Promise.resolve(cloud.id ? { id: cloud.id } : null);
+};
+drive.net.read = function () { return Promise.resolve(cloud.file); };
+drive.net.write = function (fileId, content) {
+  cloud.id = fileId || 'file-1';
+  cloud.file = content;
+  cloud.writes++;
+  return Promise.resolve({ id: cloud.id });
+};
+
+drive.setClientId('test.apps.googleusercontent.com');
+check('a client id is remembered', drive.configured(), true);
+
+var syncList = store.createList({ name: 'Sync me', templateId: 'blank' });
+store.addItems(syncList.id, ['passport', '2 socks']);
+
+drive.sync().then(function (first) {
+  check('the first sync creates the file', cloud.writes, 1);
+  check('and had nothing to pull', first.pulled, false);
+  check('it counts as connected', drive.connected(), true);
+  check('and records when', !!drive.lastSync(), true);
+
+  /* The other device ticks something and adds an item. */
+  var theirs = JSON.parse(cloud.file);
+  var theirList = theirs.lists.filter(function (l) { return l.id === syncList.id; })[0];
+  var later = new Date(Date.now() + 60000).toISOString();
+  theirList.updatedAt = later;
+  theirList.items[0].packedQty = 1;
+  theirList.items[0].updatedAt = later;
+  theirList.items.push({ id: 'their-item', name: 'umbrella', qty: 1, category: 'gear',
+                         packedQty: 0, note: '', updatedAt: later });
+  cloud.file = JSON.stringify(theirs);
+
+  /* Meanwhile this device adds one of its own. */
+  store.addItem(syncList.id, 'sunglasses');
+
+  return drive.sync();
+}).then(function (second) {
+  var after = store.getList(syncList.id);
+  var names = after.items.map(function (i) { return i.name; }).sort();
+  check('the second sync pulled the file', second.pulled, true);
+  check('both devices\u2019 items are on the list',
+    names.join(','), 'passport,socks,sunglasses,umbrella');
+  check('their tick arrived', store.isPacked(after.items.filter(function (i) {
+    return i.name === 'passport'; })[0]), true);
+  check('the merged result went back up',
+    JSON.parse(cloud.file).lists.filter(function (l) {
+      return l.id === syncList.id; })[0].items.length, 4);
+  check('nothing was duplicated', after.items.length, 4);
+
+  /* A broken file in Drive must not cost the local lists. */
+  cloud.file = 'not json at all';
+  return drive.sync().then(function () {
+    check('a broken file does not reach here', false, true);
+  }, function (err) {
+    check('a broken file is refused', /\S/.test(err.message), true);
+    check('and the lists are untouched', store.getList(syncList.id).items.length, 4);
+  });
+}).then(function () {
+  drive.disconnect();
+  check('disconnecting forgets the connection', drive.connected(), false);
+  check('but keeps the client id', drive.configured(), true);
+  console.log(failures ? '\n' + failures + ' check(s) failed' : '\nall checks passed');
+  process.exit(failures ? 1 : 0);
+}).catch(function (err) {
+  console.log('  FAIL sync threw: ' + (err && err.stack || err));
+  process.exit(1);
+});
+
 console.log('persistence and transfer');
 var json = store.exportAll();
 var count = store.getLists().length;
 var imported = store.importJSON(json);
-check('import adds every list', imported, count);
-check('import does not overwrite', store.getLists().length, count * 2);
+check('import reports every list in the file', imported.lists, count);
+check('the same lists merge rather than pile up', store.getLists().length, count);
+check('and are counted as merged', imported.merged, count);
+store.importJSON(json);
+check('importing again changes nothing', store.getLists().length, count);
 check('export as text has categories', /Documents & Money/.test(store.listToText(list.id)), true);
 check('bad import throws', (function () {
   try { store.importJSON('not json'); return false; } catch (e) { return true; }
 })(), true);
 
+var beforeReload = store.getLists().length;
 store.load();
-check('state survives a reload', store.getLists().length, count * 2);
+check('state survives a reload', store.getLists().length, beforeReload);
 
-console.log(failures ? '\n' + failures + ' check(s) failed' : '\nall checks passed');
-process.exit(failures ? 1 : 0);
+

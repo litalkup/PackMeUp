@@ -4,7 +4,7 @@
  * Caches the app shell so the app opens with no connection at all. Your data
  * never goes through here - it lives in localStorage on the device.
  */
-var CACHE = 'packmeup-v4';
+var CACHE = 'packmeup-v5';
 
 var SHELL = [
   './',
@@ -15,6 +15,7 @@ var SHELL = [
   'js/categories.js',
   'js/templates.js',
   'js/store.js',
+  'js/drive.js',
   'js/app.js',
   'manifest.webmanifest',
   'assets/favicon.svg',

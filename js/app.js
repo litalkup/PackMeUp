@@ -11,6 +11,7 @@
 
   var store = global.PMU.store;
   var notes = global.PMU.notes;
+  var drive = global.PMU.drive;
   var cats = global.PMU.categories;
   var templates = global.PMU.templates;
   var i18n = global.PMU.i18n;
@@ -1159,9 +1160,13 @@
 
     function run(text) {
       try {
-        var count = store.importJSON(text);
+        var summary = store.importJSON(text);
         closeDialog();
-        toast(t('import.done', { count: plural(count, 'list') }));
+        toast(summary.merged
+          ? t('import.doneMerged', {
+              count: plural(summary.lists, 'list'), merged: summary.merged
+            })
+          : t('import.done', { count: plural(summary.lists, 'list') }));
       } catch (err) {
         /* A pasted note is the likeliest mistake here - hand it to the
            importer that can actually read it, rather than refusing. */
@@ -1340,10 +1345,112 @@
     return { text: text || title, title: text ? title : '' };
   }
 
+  /* ------------------------------------------------------------ syncing */
+
+  function driveDialog() {
+    var idInput = h('input', {
+      class: 'input', type: 'text', id: 'drive-id', dir: 'ltr',
+      placeholder: t('drive.clientIdPlaceholder')
+    });
+    idInput.value = drive.clientId();
+
+    var auto = h('input', { type: 'checkbox' });
+    auto.checked = !!store.getSetting('driveAuto');
+    auto.addEventListener('change', function () {
+      store.setSetting('driveAuto', auto.checked);
+    });
+
+    var status = h('p', { class: 'field__hint', style: 'margin:0 0 14px' });
+    function showStatus(text) {
+      if (text) { status.textContent = text; return; }
+      var when = drive.lastSync();
+      status.textContent = !drive.connected()
+        ? t('drive.status.off')
+        : when ? t('drive.status.at', { when: relativeDate(when) }) : t('drive.status.never');
+    }
+    showStatus();
+
+    function run(interactive) {
+      var wasConnected = drive.connected();
+      showStatus(t('drive.syncing'));
+      drive.sync({ interactive: interactive }).then(function (result) {
+        var merged = result.summary && result.summary.merged;
+        toast(merged ? t('drive.syncedMerged', { merged: merged }) : t('drive.synced'));
+        render();
+        /* Connecting for the first time changes which actions belong here. */
+        if (!wasConnected) driveDialog();
+        else showStatus();
+      }).catch(function (err) {
+        showStatus();
+        toast(err.message || t('drive.failed'));
+      });
+    }
+
+    /* These rows act inside the open dialog, so the status can update in place. */
+    function actionRow(icon, label, onClick) {
+      return h('button', { class: 'menu__item', type: 'button', onclick: onClick }, [
+        h('span', { class: 'menu__icon', text: icon, 'aria-hidden': 'true' }),
+        h('span', { text: label })
+      ]);
+    }
+
+    var body = h('div', {}, [
+      h('p', { style: 'margin-top:0;color:var(--text-muted)', text: t('drive.what') }),
+      status,
+      h('label', { class: 'field' }, [
+        h('span', { class: 'field__label', text: t('drive.clientId') }),
+        idInput
+      ]),
+      h('label', { class: 'field', style: 'display:flex;gap:9px;align-items:center' }, [
+        auto,
+        h('span', { text: t('drive.auto') })
+      ]),
+      h('div', { class: 'menu' }, [
+        actionRow('☁️', drive.connected() ? t('drive.syncNow') : t('drive.connect'), function () {
+          drive.setClientId(idInput.value);
+          if (!drive.configured()) { toast(t('drive.noClientId')); return; }
+          run(!drive.connected());
+        }),
+        drive.connected() ? actionRow('🔌', t('drive.disconnect'), function () {
+          drive.disconnect();
+          toast(t('drive.status.off'));
+          driveDialog();
+        }) : null
+      ]),
+      h('div', { class: 'menu__sep' }),
+      h('div', { class: 'field__label', text: t('drive.setupTitle') }),
+      h('p', { class: 'field__hint', style: 'margin:0 0 8px',
+               text: t('drive.setupBody', { origin: global.location.origin }) }),
+      h('p', { class: 'field__hint', style: 'margin:0', text: t('drive.setupWarning') })
+    ]);
+
+    openDialog({
+      title: t('drive.title'),
+      body: body,
+      actions: [{
+        label: t('drive.save'), variant: 'primary',
+        onClick: function () { drive.setClientId(idInput.value); toast(t('toast.saved')); }
+      }]
+    });
+  }
+
+  /* A quiet sync in the background, once the dust settles after a change. */
+  var autoSyncTimer = null;
+  function scheduleAutoSync() {
+    if (!drive.configured() || !drive.connected() || !store.getSetting('driveAuto')) return;
+    if (autoSyncTimer) clearTimeout(autoSyncTimer);
+    autoSyncTimer = setTimeout(function () {
+      drive.sync({ interactive: false }).then(function (result) {
+        if (result.summary && result.summary.merged) render();
+      }).catch(function () { /* the menu shows the state; no toast for a quiet try */ });
+    }, 8000);
+  }
+
   function appMenuDialog() {
     var theme = store.getSetting('theme') || 'system';
     var menu = h('div', { class: 'menu' }, [
       menuEntry('➕', t('menu.newList'), newListDialog),
+      menuEntry('☁️', t('drive.menu'), driveDialog),
       menuEntry('📋', t('note.menu'), function () { noteImportDialog(null); }),
       menuEntry('📥', t('menu.import'), importDialog),
       menuEntry('💾', t('menu.exportAll'), function () { exportDialog(null); }),
@@ -1493,6 +1600,7 @@
     applyLanguage();
     wire();
     store.subscribe(render);
+    store.subscribe(scheduleAutoSync);
     ui.route = parseHash();
     if (ui.route.view === 'list' && !store.getList(ui.route.listId)) {
       ui.route = { view: 'home', listId: null };
@@ -1502,6 +1610,13 @@
 
     var shared = sharedNote();
     if (shared) setTimeout(function () { noteImportDialog(shared); }, 60);
+
+    /* Pick up whatever the other device left, without asking. */
+    if (drive.configured() && drive.connected() && store.getSetting('driveAuto')) {
+      setTimeout(function () {
+        drive.sync({ interactive: false }).catch(function () {});
+      }, 1200);
+    }
   }
 
   if (document.readyState === 'loading') {
