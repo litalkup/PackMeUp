@@ -52,32 +52,34 @@
 
   <!-- ------------------------------------------------------- list view -->
   <main class="view" id="view-list" hidden>
-    <section class="list-head">
-      <div class="list-head__top">
-        <span class="list-head__icon" id="list-icon" aria-hidden="true">🧳</span>
-        <div class="list-head__text">
-          <h2 class="list-head__name" id="list-name" dir="auto">List</h2>
-          <p class="list-head__sub" id="list-sub"></p>
+    <div class="list-sticky">
+      <section class="list-head">
+        <div class="list-head__top">
+          <span class="list-head__icon" id="list-icon" aria-hidden="true">🧳</span>
+          <div class="list-head__text">
+            <h2 class="list-head__name" id="list-name" dir="auto">List</h2>
+            <p class="list-head__sub" id="list-sub"></p>
+          </div>
+          <span class="list-head__pct" id="list-pct">0%</span>
         </div>
-        <span class="list-head__pct" id="list-pct">0%</span>
-      </div>
-      <div class="progress" id="list-progress" role="progressbar" data-i18n-aria="list.progress"
-           aria-label="Packing progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
-        <div class="progress__bar" id="list-progress-bar"></div>
-      </div>
-    </section>
+        <div class="progress" id="list-progress" role="progressbar" data-i18n-aria="list.progress"
+             aria-label="Packing progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <div class="progress__bar" id="list-progress-bar"></div>
+        </div>
+      </section>
 
-    <div class="toolbar">
-      <div class="chips" role="group" id="list-filters" data-i18n-aria="list.filter.aria" aria-label="Filter">
-        <button class="chip" type="button" data-filter="all" data-i18n="list.filter.all" aria-pressed="true">All</button>
-        <button class="chip" type="button" data-filter="todo" data-i18n="list.filter.todo" aria-pressed="false">To pack</button>
-        <button class="chip" type="button" data-filter="packed" data-i18n="list.filter.packed" aria-pressed="false">Packed</button>
+      <div class="toolbar">
+        <div class="chips" role="group" id="list-filters" data-i18n-aria="list.filter.aria" aria-label="Filter">
+          <button class="chip" type="button" data-filter="all" data-i18n="list.filter.all" aria-pressed="true">All</button>
+          <button class="chip" type="button" data-filter="todo" data-i18n="list.filter.todo" aria-pressed="false">To pack</button>
+          <button class="chip" type="button" data-filter="packed" data-i18n="list.filter.packed" aria-pressed="false">Packed</button>
+        </div>
+        <label class="search">
+          <span class="visually-hidden" data-i18n="list.search.aria">Search items in this list</span>
+          <input class="input" id="list-search" type="search" data-i18n-placeholder="list.search"
+                 placeholder="Search items" autocomplete="off">
+        </label>
       </div>
-      <label class="search">
-        <span class="visually-hidden" data-i18n="list.search.aria">Search items in this list</span>
-        <input class="input" id="list-search" type="search" data-i18n-placeholder="list.search"
-               placeholder="Search items" autocomplete="off">
-      </label>
     </div>
 
     <div class="reorder-bar" id="reorder-bar" hidden></div>

@@ -286,6 +286,19 @@ html[data-theme='dark'] .template[aria-pressed='true'] { background: var(--brand
 
 /* ------------------------------------------------------------- list header */
 
+/*
+ * The progress card and the filter/search toolbar stay put under the topbar
+ * while only the item groups below them scroll. The background matches the
+ * page so nothing shows through as content passes underneath, and a border
+ * only appears once the header is actually pinned (nothing to scroll under
+ * it yet = no border), via :has() with a plain CSS fallback of none for
+ * browsers that lack it - the sticky behaviour itself does not depend on it.
+ */
+.list-sticky {
+  position: sticky; top: var(--header-h); z-index: 15;
+  background: var(--bg);
+}
+
 .list-head {
   padding: 14px; margin-bottom: 14px;
   border: 1px solid var(--border); border-radius: var(--radius);
