@@ -318,6 +318,9 @@
     checkpoint('Deleted "' + list.name + '"');
     state.removedLists[id] = now();
     state.lists = state.lists.filter(function (l) { return l.id !== id; });
+    /* Categories that existed only for this list go with it. */
+    state.categories = state.categories.filter(function (c) { return c.listId !== id; });
+    cat.setCustom(state.categories);
     commit();
     return list;
   }
@@ -650,12 +653,34 @@
 
   /* ------------------------------------------------------ categories */
 
-  function getCategories() { return state.categories; }
+  /*
+   * A category belongs either to one list or to all of them. "Photo gear" is
+   * worth having on the trip it was invented for without cluttering every
+   * other list, while something like "Documents" earns its place everywhere.
+   *
+   * getCategories(listId) answers what that list may use: the ones shared by
+   * every list, plus its own. Called with nothing, it answers with all of
+   * them, which is what the manager shows.
+   */
+  function getCategories(listId) {
+    if (!listId) return state.categories;
+    return state.categories.filter(function (c) {
+      return !c.listId || c.listId === listId;
+    });
+  }
 
-  function addCategory(label, icon) {
+  /* Categories that name a list which no longer exists. */
+  function orphanCategories() {
+    return state.categories.filter(function (c) {
+      return c.listId && !getList(c.listId);
+    });
+  }
+
+  function addCategory(label, icon, listId) {
     var name = String(label || '').trim();
     if (!name) return null;
     var category = { id: 'c-' + uid(), label: name, icon: icon || '📦' };
+    if (listId) category.listId = listId;
     state.categories.push(category);
     cat.setCustom(state.categories);
     commit();
@@ -667,6 +692,10 @@
     if (!category) return null;
     if (changes.label !== undefined) category.label = String(changes.label).trim() || category.label;
     if (changes.icon !== undefined) category.icon = changes.icon;
+    if (changes.listId !== undefined) {
+      if (changes.listId) category.listId = changes.listId;
+      else delete category.listId;
+    }
     cat.setCustom(state.categories);
     commit();
     return category;
@@ -933,6 +962,7 @@
     moveItem: moveItem,
     inCategory: inCategory,
     getCategories: getCategories,
+    orphanCategories: orphanCategories,
     addCategory: addCategory,
     updateCategory: updateCategory,
     deleteCategory: deleteCategory,

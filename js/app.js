@@ -1068,14 +1068,20 @@
     qtyInput.addEventListener('input', function () {
       packedInput.max = String(Math.max(1, parseInt(qtyInput.value, 10) || 1));
     });
-    var select = h('select', { class: 'select' }, cats.all.map(function (c) {
+    /* Built-in categories, plus the ones this list is allowed to use. */
+    var offered = cats.all.filter(function (c) {
+      if (!c.custom) return true;
+      var mine = store.getCategories(listId);
+      return mine.some(function (own) { return own.id === c.id; }) || c.id === item.category;
+    });
+    var select = h('select', { class: 'select' }, offered.map(function (c) {
       return h('option', { value: c.id, text: c.icon + '  ' + cats.label(c.id) });
     }).concat([h('option', { value: '__new__', text: t('cats.newOption') })]));
     select.value = item.category;
     select.addEventListener('change', function () {
       if (select.value !== '__new__') return;
       select.value = item.category;
-      newCategoryDialog(function (category) {
+      newCategoryDialog(listId, function (category) {
         /* Rebuild the options so the new one can be chosen. */
         itemDialog(listId, itemId);
         var reopened = $('dialog-body').querySelector('select');
@@ -1142,7 +1148,18 @@
     });
   }
 
-  function newCategoryDialog(onCreated) {
+  /*
+   * listId is the list the category is being made for. The dialog offers to
+   * keep it to that list or to share it with all of them; either way the list
+   * it was made from ends up with it.
+   */
+  function newCategoryDialog(listId, onCreated) {
+    var list = listId ? store.getList(listId) : null;
+    var scope = h('select', { class: 'select' }, [
+      list ? h('option', { value: 'list', text: t('cats.scopeList', { name: list.name }) }) : null,
+      h('option', { value: 'all', text: t('cats.scopeAll') })
+    ].filter(Boolean));
+
     var chosenIcon = CATEGORY_ICONS[0];
     var nameInput = h('input', {
       class: 'input', type: 'text', id: 'cat-name', dir: 'auto',
@@ -1175,6 +1192,10 @@
         h('div', { class: 'field' }, [
           h('span', { class: 'field__label', text: t('cats.icon') }),
           picker
+        ]),
+        h('label', { class: 'field' }, [
+          h('span', { class: 'field__label', text: t('cats.scope') }),
+          scope
         ])
       ]),
       actions: [
@@ -1182,9 +1203,12 @@
         {
           label: t('cats.create'), variant: 'primary',
           onClick: function () {
-            var category = store.addCategory(nameInput.value, chosenIcon);
+            var onlyHere = scope.value === 'list' && list;
+            var category = store.addCategory(nameInput.value, chosenIcon,
+              onlyHere ? list.id : null);
             if (!category) return false;
-            toast(t('cats.added'));
+            toast(onlyHere ? t('cats.addedTo', { name: list.name })
+                           : t('cats.addedEverywhere'));
             if (onCreated) setTimeout(function () { onCreated(category); }, 10);
           }
         }
@@ -1194,6 +1218,7 @@
 
   function categoriesDialog() {
     var mine = store.getCategories();
+    var openList = ui.route.view === 'list' ? store.getList(ui.route.listId) : null;
     var counts = {};
     store.getLists().forEach(function (list) {
       list.items.forEach(function (item) {
@@ -1206,8 +1231,8 @@
         h('span', { class: 'menu__icon', text: category.icon, 'aria-hidden': 'true' }),
         h('span', { class: 'menu__body' }, [
           h('span', { text: category.label, dir: 'auto' }),
-          h('span', { class: 'menu__desc',
-                      text: t('cats.itemCount', { count: counts[category.id] || 0 }) })
+          h('span', { class: 'menu__desc', text: scopeLabel(category) + ' · ' +
+                      t('cats.itemCount', { count: counts[category.id] || 0 }) })
         ]),
         h('button', {
           class: 'icon-btn', type: 'button', text: '✏️',
@@ -1240,7 +1265,9 @@
           : h('p', { class: 'field__hint', style: 'margin:0 0 12px', text: t('cats.none') }),
         h('div', { class: 'menu' }, [
           menuEntry('➕', t('cats.add'), function () {
-            newCategoryDialog(function () { categoriesDialog(); });
+            newCategoryDialog(openList ? openList.id : null, function () {
+              categoriesDialog();
+            });
           })
         ]),
         h('p', { class: 'field__hint', style: 'margin:10px 2px 0',
@@ -1248,6 +1275,13 @@
       ]),
       actions: [{ label: t('action.close') }]
     });
+  }
+
+  /* "only in Copenhagen" / "in all lists", for the manager's rows. */
+  function scopeLabel(category) {
+    if (!category.listId) return t('cats.scopeAllShort');
+    var list = store.getList(category.listId);
+    return t('cats.scopeListShort', { name: list ? list.name : '…' });
   }
 
   function renameCategoryDialog(category) {
@@ -1270,6 +1304,13 @@
       picker.appendChild(button);
     });
 
+    var owner = category.listId ? store.getList(category.listId) : null;
+    var scope = h('select', { class: 'select' }, [
+      owner ? h('option', { value: 'list', text: t('cats.scopeList', { name: owner.name }) }) : null,
+      h('option', { value: 'all', text: t('cats.scopeAll') })
+    ].filter(Boolean));
+    scope.value = category.listId ? 'list' : 'all';
+
     openDialog({
       title: t('menu.rename'),
       focus: '#cat-rename',
@@ -1281,6 +1322,10 @@
         h('div', { class: 'field' }, [
           h('span', { class: 'field__label', text: t('cats.icon') }),
           picker
+        ]),
+        h('label', { class: 'field' }, [
+          h('span', { class: 'field__label', text: t('cats.scope') }),
+          scope
         ])
       ]),
       actions: [
@@ -1288,7 +1333,10 @@
         {
           label: t('action.save'), variant: 'primary',
           onClick: function () {
-            store.updateCategory(category.id, { label: nameInput.value, icon: chosenIcon });
+            store.updateCategory(category.id, {
+              label: nameInput.value, icon: chosenIcon,
+              listId: scope.value === 'list' && owner ? owner.id : null
+            });
             toast(t('toast.saved'));
             setTimeout(categoriesDialog, 10);
           }

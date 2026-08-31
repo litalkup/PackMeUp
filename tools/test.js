@@ -286,6 +286,36 @@ check('it joins the grouping order before Other',
   cats.all[cats.all.length - 1].id, 'misc');
 check('and it sits just before it', cats.all[cats.all.length - 2].id, photo.id);
 
+console.log('a category belongs to a list, or to all of them');
+var tripA = store.createList({ name: 'Trip A', templateId: 'blank' });
+var tripB = store.createList({ name: 'Trip B', templateId: 'blank' });
+var onlyA = store.addCategory('Dive gear', '🤿', tripA.id);
+var everywhere = store.addCategory('Travel papers', '🪪');
+
+function offeredIn(listId) {
+  return store.getCategories(listId).map(function (c) { return c.label; });
+}
+check('the list it was made for gets it', offeredIn(tripA.id).indexOf('Dive gear') !== -1, true);
+check('another list does not', offeredIn(tripB.id).indexOf('Dive gear'), -1);
+check('a shared one reaches both',
+  offeredIn(tripA.id).indexOf('Travel papers') !== -1 &&
+  offeredIn(tripB.id).indexOf('Travel papers') !== -1, true);
+check('the manager sees them all', store.getCategories().length >= 2, true);
+check('a list-only category records its list', onlyA.listId, tripA.id);
+check('a shared one records none', everywhere.listId, undefined);
+
+store.updateCategory(onlyA.id, { listId: null });
+check('sharing it later reaches the other list', offeredIn(tripB.id).indexOf('Dive gear') !== -1, true);
+store.updateCategory(onlyA.id, { listId: tripA.id });
+check('and it can be narrowed again', offeredIn(tripB.id).indexOf('Dive gear'), -1);
+
+check('an orphan is spotted', store.orphanCategories().length, 0);
+store.deleteList(tripA.id);
+check('deleting the list takes its category with it',
+  store.getCategories().filter(function (c) { return c.id === onlyA.id; }).length, 0);
+check('the shared one stays',
+  store.getCategories().filter(function (c) { return c.id === everywhere.id; }).length, 1);
+
 var shoot = store.createList({ name: 'Shoot', templateId: 'blank' });
 store.addItems(shoot.id, ['camera', 'lens', 'tripod']);
 var shots = store.getList(shoot.id).items;
