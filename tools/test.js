@@ -165,6 +165,53 @@ check('item deleted', store.getList(list.id).items.some(function (i) { return i.
 check('delete can be undone', typeof store.undo(), 'string');
 check('item is back', store.getList(list.id).items.some(function (i) { return i.id === added.id; }), true);
 
+console.log('undo remembers up to 3 steps');
+var undoList = store.createList({ name: 'Undo test', templateId: 'blank' });
+check('a fresh checkpoint sits on top', store.peekUndo(), 'Created “Undo test”');
+
+/* Self-reversing, high-frequency actions must not spend the 3-step budget:
+   ticking a box or advancing a counter is undone by touching it again. */
+var quick = store.addItem(undoList.id, '3 razors');
+store.toggleItem(undoList.id, quick.id);
+store.advanceItem(undoList.id, quick.id);
+store.setPackedQty(undoList.id, quick.id, 1);
+store.moveItem(undoList.id, quick.id, -1);
+check('adding, ticking, counting and reordering leave the stack untouched',
+  store.peekUndo(), 'Created “Undo test”');
+
+/* Four real, distinct actions - only the last three are still reachable. */
+store.updateList(undoList.id, { name: 'Undo test 1' });
+store.updateList(undoList.id, { name: 'Undo test 2' });
+store.updateList(undoList.id, { name: 'Undo test 3' });
+store.updateList(undoList.id, { name: 'Undo test 4' });
+check('the stack caps at 3', store.undoCount(), 3);
+check('the oldest of the four fell off, so only 3 undos reach back',
+  store.peekUndo(), 'Updated “Undo test 3”');
+
+check('first undo', typeof store.undo(), 'string');
+check('back to name 3', store.getList(undoList.id).name, 'Undo test 3');
+check('second undo', typeof store.undo(), 'string');
+check('back to name 2', store.getList(undoList.id).name, 'Undo test 2');
+check('third undo', typeof store.undo(), 'string');
+check('back to name 1', store.getList(undoList.id).name, 'Undo test 1');
+check('nothing left to undo', store.canUndo(), false);
+check('a fourth undo is a no-op', store.undo(), null);
+check('the name from the very first rename is gone for good',
+  store.getList(undoList.id).name, 'Undo test 1');
+
+/* Editing an item, adding a category and renaming one are each one step. */
+var editItem = store.addItem(undoList.id, 'sunglasses');
+store.updateItem(undoList.id, editItem.id, { name: 'sunglasses', qty: 2, note: 'blue' });
+check('editing an item is undoable', store.peekUndo(), 'Updated “sunglasses”');
+store.undo();
+check('and reverts the whole edit at once',
+  store.getList(undoList.id).items.filter(function (i) { return i.id === editItem.id; })[0].note, '');
+
+var newCat = store.addCategory('Errands', '🛒');
+check('adding a category is undoable', store.peekUndo(), 'Added category “Errands”');
+store.undo();
+check('and removing it is one step', cats.all.some(function (c) { return c.id === newCat.id; }), false);
+
 console.log('notes pasted or shared from elsewhere');
 var keepNote = notes.parse([
   'רשימת מילואים',
@@ -237,6 +284,10 @@ check('leaves other items alone', store.findSimilar(dupeList.id, 'tent'), null);
 
 var original = store.findSimilar(dupeList.id, 'socks');
 store.toggleItem(dupeList.id, original.id);
+/* replaceItem no longer checkpoints itself - its only caller (resolving a
+   duplicate while adding items) wraps a whole batch in one checkpoint, so
+   here the test takes that role. */
+store.checkpoint('replace socks');
 store.replaceItem(dupeList.id, original.id, '7 wool socks');
 var replaced = store.getList(dupeList.id).items[0];
 check('replacing keeps the same slot', replaced.id, original.id);

@@ -140,14 +140,15 @@
     if (toastTimer) clearTimeout(toastTimer);
   }
 
+  /* Pops the most recent checkpoint. Safe to call with nothing to undo. */
+  function performUndo() {
+    if (!store.canUndo()) return;
+    store.undo();
+    toast(t('toast.undone'));
+  }
+
   function undoable(message) {
-    toast(message, {
-      label: t('action.undo'),
-      onClick: function () {
-        store.undo();
-        toast(t('toast.undone'));
-      }
-    });
+    toast(message, { label: t('action.undo'), onClick: performUndo });
   }
 
   /* -------------------------------------------------------------- dialog */
@@ -653,6 +654,12 @@
    */
   function addLines(listId, lines) {
     var queue = lines.map(function (line) { return line; }).filter(Boolean);
+    if (!queue.length) return;
+    var firstName = queue.length === 1 ? store.parseLine(store.lineText(queue[0])).name : null;
+    store.checkpoint(firstName
+      ? t('undo.addedItem', { name: firstName })
+      : t('undo.addedItems', { n: queue.length }));
+
     var tally = { added: 0, replaced: 0, skipped: 0, conflictsSeen: 0,
                   total: queue.length, lastItem: null, applyToAll: null };
     var conflicts = countConflicts(listId, queue);
@@ -712,7 +719,7 @@
       if (tally.skipped) { toast(t('dupe.skipped')); return; }
       if (tally.added && tally.lastItem) {
         var category = cats.get(tally.lastItem.category);
-        toast(t('add.addedTo', { category: category.icon + ' ' + cats.label(category.id) }));
+        undoable(t('add.addedTo', { category: category.icon + ' ' + cats.label(category.id) }));
       }
       return;
     }
@@ -720,7 +727,9 @@
     if (tally.added) parts.push(t('add.summaryAdded', { n: tally.added }));
     if (tally.replaced) parts.push(t('add.summaryReplaced', { n: tally.replaced }));
     if (tally.skipped) parts.push(t('add.summarySkipped', { n: tally.skipped }));
-    if (parts.length) toast(parts.join(' · '));
+    if (!parts.length) return;
+    if (tally.added || tally.replaced) undoable(parts.join(' · '));
+    else toast(parts.join(' · '));
   }
 
   /* The two items side by side, so the choice is made on what is actually there. */
@@ -1044,7 +1053,7 @@
               icon: chosenIcon,
               notes: notes.value.trim()
             });
-            toast(t('toast.saved'));
+            undoable(t('toast.saved'));
           }
         }
       ]
@@ -1141,7 +1150,7 @@
             if (select.value !== item.category) {
               store.setItemCategory(listId, itemId, select.value);
             }
-            toast(t('toast.saved'));
+            undoable(t('toast.saved'));
           }
         }
       ]
@@ -1207,8 +1216,8 @@
             var category = store.addCategory(nameInput.value, chosenIcon,
               onlyHere ? list.id : null);
             if (!category) return false;
-            toast(onlyHere ? t('cats.addedTo', { name: list.name })
-                           : t('cats.addedEverywhere'));
+            undoable(onlyHere ? t('cats.addedTo', { name: list.name })
+                               : t('cats.addedEverywhere'));
             if (onCreated) setTimeout(function () { onCreated(category); }, 10);
           }
         }
@@ -1337,7 +1346,7 @@
               label: nameInput.value, icon: chosenIcon,
               listId: scope.value === 'list' && owner ? owner.id : null
             });
-            toast(t('toast.saved'));
+            undoable(t('toast.saved'));
             setTimeout(categoriesDialog, 10);
           }
         }
@@ -1705,21 +1714,60 @@
     }, 8000);
   }
 
-  function appMenuDialog() {
+  /*
+   * A row that stays in place instead of closing the menu, so pressing it
+   * repeatedly walks back through up to three steps of history without
+   * having to reopen the menu each time. It disappears once there is
+   * nothing left to undo.
+   */
+  function undoRow() {
+    if (!store.canUndo()) return null;
+    return h('button', {
+      class: 'menu__item menu__item--stack', type: 'button',
+      onclick: function () {
+        performUndo();
+        renderAppMenu();
+      }
+    }, [
+      h('span', { class: 'menu__icon', text: '↩️', 'aria-hidden': 'true' }),
+      h('span', { class: 'menu__body' }, [
+        h('span', { text: t('menu.undo', { label: store.peekUndo() }), dir: 'auto' }),
+        h('span', { class: 'menu__desc', text: plural(store.undoCount(), 'step') })
+      ])
+    ]);
+  }
+
+  /* Rebuilds the app menu's contents in place, so undoRow() can refresh
+     itself (new label, lower count, or gone entirely) without the whole
+     dialog visibly closing and reopening. */
+  function renderAppMenu() {
+    var body = $('dialog-body');
+    if (!body || !dialog.open) return;
+    clear(body);
+    body.appendChild(appMenuBody());
+  }
+
+  function appMenuBody() {
     var theme = store.getSetting('theme') || 'system';
-    var menu = h('div', { class: 'menu' }, [
+    var undo = undoRow();
+    return h('div', { class: 'menu' }, [
       menuEntry('➕', t('menu.newList'), newListDialog),
       menuEntry('🗂️', t('cats.menu'), categoriesDialog),
       menuEntry('☁️', t('drive.menu'), driveDialog),
       menuEntry('📋', t('note.menu'), function () { noteImportDialog(null); }),
       menuEntry('📥', t('menu.import'), importDialog),
       menuEntry('💾', t('menu.exportAll'), function () { exportDialog(null); }),
+      undo ? h('div', { class: 'menu__sep' }) : null,
+      undo,
       h('div', { class: 'menu__sep' }),
       menuEntry('🌐', t('menu.language', { language: i18n.meta().label }), languageDialog),
       menuEntry('◐', t('menu.theme', { theme: t('theme.' + theme) }), cycleTheme),
       menuEntry('ℹ️', t('menu.about'), aboutDialog)
     ]);
-    openDialog({ title: t('app.name'), body: menu });
+  }
+
+  function appMenuDialog() {
+    openDialog({ title: t('app.name'), body: appMenuBody() });
   }
 
   function aboutDialog() {
@@ -1821,6 +1869,9 @@
       if (event.key === 'n' && !event.metaKey && !event.ctrlKey) {
         event.preventDefault();
         newListDialog();
+      } else if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
+        event.preventDefault();
+        performUndo();
       } else if (event.key === '/') {
         event.preventDefault();
         (ui.route.view === 'list' ? $('list-search') : $('home-search')).focus();

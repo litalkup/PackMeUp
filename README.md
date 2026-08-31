@@ -41,6 +41,7 @@ opens in any browser on a computer. No account, no server, works with no signal.
   and hiking, beach day, business trip, gym bag, family trip with kids.
 - **Bulk add** — paste a whole list, one item per line; every line gets a category.
 - **Bring a list in from Google Keep** — see below.
+- **Undo, up to the last 3 actions** — see below.
 - **Search and filter** across lists and inside a list.
 - **Works offline** — the app is cached on the device, and so is your data.
 - **Phone and desktop** — one layout that fits both, plus a dark theme and a
@@ -48,6 +49,20 @@ opens in any browser on a computer. No account, no server, works with no signal.
 - **Export and import** — move lists between devices as a `.json` backup, or
   copy a list out as plain text.
 - **Fully bilingual** — see below.
+
+## Undo
+
+Adding, editing or removing something shows a toast with an **Undo** button, and
+**⋯ → Undo: …** in the app menu keeps that button around after the toast has
+faded — click it as many as three times in a row to step back through the last
+three actions, each undo revealing the one before it. On a computer, `Ctrl+Z` /
+`⌘Z` does the same when focus isn't in a text field.
+
+"Action" means something you'd actually want to reverse: adding, editing or
+removing an item, renaming a list, adding or editing a category, marking
+everything packed, an import. Ticking a checkbox or tapping the quantity
+counter isn't part of the three — touching it again undoes it just as fast,
+so it isn't worth spending one of the three slots on.
 
 ## Bringing a list in from Google Keep
 

@@ -18,7 +18,7 @@
   var state = null;
   var listeners = [];
   var undoStack = [];
-  var UNDO_LIMIT = 20;
+  var UNDO_LIMIT = 3;    /* "undo the last 3 actions" */
   var saveTimer = null;
   var storageAvailable = true;
 
@@ -171,11 +171,23 @@
     var entry = undoStack.pop();
     if (!entry) return null;
     state = entry.snapshot;
+    /* The categories module keeps its own live copy (cats.all) alongside
+       state.categories, resynced wherever categories are added, changed or
+       removed - undo replaces state wholesale, so it needs the same. */
+    cat.setCustom(state.categories);
     commit();
     return entry.label;
   }
 
   function canUndo() { return undoStack.length > 0; }
+
+  function undoCount() { return undoStack.length; }
+
+  /* The label of what a call to undo() would revert right now, or null. */
+  function peekUndo() {
+    var entry = undoStack[undoStack.length - 1];
+    return entry ? entry.label : null;
+  }
 
   /* ------------------------------------------------------------------ lists */
 
@@ -256,7 +268,7 @@
         if (item) list.items.push(item);
       });
     }
-    checkpoint('Created "' + list.name + '"');
+    checkpoint(i18n.t('undo.created', { name: list.name }));
     state.lists.unshift(list);
     commit();
     return list;
@@ -277,7 +289,7 @@
       if (options.keepPacked !== true) item.packedQty = 0;
       return item;
     });
-    checkpoint('Duplicated "' + source.name + '"');
+    checkpoint(i18n.t('undo.duplicated', { name: source.name }));
     state.lists.unshift(copy);
     commit();
     return copy;
@@ -306,6 +318,7 @@
   function updateList(id, changes) {
     var list = getList(id);
     if (!list) return null;
+    checkpoint(i18n.t('undo.updatedList', { name: list.name }));
     Object.keys(changes).forEach(function (key) { list[key] = changes[key]; });
     touch(list);
     commit();
@@ -315,7 +328,7 @@
   function deleteList(id) {
     var list = getList(id);
     if (!list) return null;
-    checkpoint('Deleted "' + list.name + '"');
+    checkpoint(i18n.t('undo.deletedList', { name: list.name }));
     state.removedLists[id] = now();
     state.lists = state.lists.filter(function (l) { return l.id !== id; });
     /* Categories that existed only for this list go with it. */
@@ -364,6 +377,7 @@
     if (!list) return null;
     var item = getItem(list, itemId);
     if (!item) return null;
+    checkpoint(i18n.t('undo.updatedItem', { name: item.name }));
 
     if (typeof changes.name === 'string' && changes.name !== item.name) {
       var parsed = parseLine(changes.name);
@@ -440,7 +454,7 @@
     if (!list) return null;
     var item = getItem(list, itemId);
     if (!item) return null;
-    checkpoint('Removed "' + item.name + '"');
+    checkpoint(i18n.t('undo.removedItem', { name: item.name }));
     list.items = list.items.filter(function (i) { return i.id !== itemId; });
     forget(list, itemId);
     commit();
@@ -561,7 +575,6 @@
     var parsed = parseLine(lineText(line));
     if (!parsed.name) return null;
 
-    checkpoint('Replaced "' + item.name + '"');
     item.name = parsed.name;
     item.qty = parsed.qty;
     item.category = cat.categorize(parsed.name, state.learned);
@@ -576,7 +589,7 @@
   function setAllPacked(listId, packed) {
     var list = getList(listId);
     if (!list) return null;
-    checkpoint(packed ? 'Checked everything' : 'Unchecked everything');
+    checkpoint(i18n.t(packed ? 'undo.checkedAll' : 'undo.uncheckedAll'));
     list.items.forEach(function (item) {
       item.packedQty = packed ? item.qty : 0;
       item.updatedAt = now();
@@ -589,7 +602,7 @@
   function removePacked(listId) {
     var list = getList(listId);
     if (!list) return null;
-    checkpoint('Removed packed items');
+    checkpoint(i18n.t('undo.removedPacked'));
     list.items.filter(isPacked).forEach(function (item) { list.removed[item.id] = now(); });
     list.items = list.items.filter(function (item) { return !isPacked(item); });
     touch(list);
@@ -601,7 +614,7 @@
   function recategorize(listId) {
     var list = getList(listId);
     if (!list) return null;
-    checkpoint('Re-sorted categories');
+    checkpoint(i18n.t('undo.recategorized'));
     list.items.forEach(function (item) {
       if (item.categoryPinned) return;
       item.category = cat.categorize(item.name, state.learned);
@@ -681,6 +694,7 @@
     if (!name) return null;
     var category = { id: 'c-' + uid(), label: name, icon: icon || '📦' };
     if (listId) category.listId = listId;
+    checkpoint(i18n.t('undo.addedCategory', { name: name }));
     state.categories.push(category);
     cat.setCustom(state.categories);
     commit();
@@ -690,6 +704,7 @@
   function updateCategory(id, changes) {
     var category = state.categories.filter(function (c) { return c.id === id; })[0];
     if (!category) return null;
+    checkpoint(i18n.t('undo.updatedCategory', { name: category.label }));
     if (changes.label !== undefined) category.label = String(changes.label).trim() || category.label;
     if (changes.icon !== undefined) category.icon = changes.icon;
     if (changes.listId !== undefined) {
@@ -705,7 +720,7 @@
   function deleteCategory(id) {
     var category = state.categories.filter(function (c) { return c.id === id; })[0];
     if (!category) return null;
-    checkpoint('Removed category');
+    checkpoint(i18n.t('undo.removedCategory', { name: category.label }));
     state.categories = state.categories.filter(function (c) { return c.id !== id; });
     state.lists.forEach(function (list) {
       list.items.forEach(function (item) {
@@ -910,7 +925,7 @@
     if (!Array.isArray(incoming) || !incoming.length) {
       throw new Error(i18n.t('import.noLists'));
     }
-    checkpoint('Imported lists');
+    checkpoint(i18n.t('undo.imported'));
     var prepared = migrate({
       lists: incoming,
       categories: (state.categories || []).concat(data.categories || []),
@@ -974,6 +989,9 @@
 
     undo: undo,
     canUndo: canUndo,
+    undoCount: undoCount,
+    peekUndo: peekUndo,
+    checkpoint: checkpoint,
 
     mergeState: mergeState,
     exportAll: exportAll,
