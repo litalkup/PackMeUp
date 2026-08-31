@@ -424,11 +424,14 @@
     if (wordsA.length === wordsB.length) {
       var taken = [];
       var paired = wordsA.every(function (word) {
-        var formsA = cat.forms(word);
+        var peeledA = cat.forms(word);
+        var plainA = cat.forms(word, { prefixes: false });
         for (var i = 0; i < wordsB.length; i++) {
           if (taken[i]) continue;
-          var formsB = cat.forms(wordsB[i]);
-          if (formsA.some(function (form) { return formsB.indexOf(form) !== -1; })) {
+          var peeledB = cat.forms(wordsB[i]);
+          var plainB = cat.forms(wordsB[i], { prefixes: false });
+          /* One of the two may have a prefix peeled off, never both. */
+          if (shares(peeledA, plainB) || shares(plainA, peeledB)) {
             taken[i] = true;
             return true;
           }
@@ -438,6 +441,10 @@
       if (paired) return true;
     }
     return withinOneEdit(textA, textB);
+  }
+
+  function shares(a, b) {
+    return a.some(function (value) { return b.indexOf(value) !== -1; });
   }
 
   /* A single inserted, deleted or changed character - a mistyped "sunscren". */

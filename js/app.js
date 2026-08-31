@@ -617,7 +617,7 @@
   function addLines(listId, lines) {
     var queue = lines.map(function (line) { return line; }).filter(Boolean);
     var tally = { added: 0, replaced: 0, skipped: 0, conflictsSeen: 0,
-                  total: queue.length, lastItem: null };
+                  total: queue.length, lastItem: null, applyToAll: null };
     var conflicts = countConflicts(listId, queue);
     step(0);
 
@@ -628,6 +628,11 @@
         if (!parsed.name) { index++; continue; }
 
         var existing = store.findSimilar(listId, parsed.name);
+        if (existing && tally.applyToAll) {
+          resolveConflict(listId, line, existing, tally.applyToAll, tally);
+          index++;
+          continue;
+        }
         if (existing) {
           conflictDialog({
             listId: listId,
@@ -694,28 +699,37 @@
     ]);
   }
 
+  /* Carries out one answer to a duplicate, with or without the dialog. */
+  function resolveConflict(listId, line, existing, action, tally) {
+    if (action === 'add') {
+      tally.lastItem = store.addItem(listId, line);
+      if (tally.lastItem) tally.added++;
+    } else if (action === 'replace') {
+      store.replaceItem(listId, existing.id, line);
+      tally.replaced++;
+    } else {
+      tally.skipped++;
+    }
+  }
+
   function conflictDialog(conflict, tally) {
     var existing = conflict.existing;
     var parsed = conflict.parsed;
     var answered = false;
+    var applyAll = null;
 
     function choose(action) {
       answered = true;
       tally.conflictsSeen++;
-      if (action === 'add') {
-        tally.lastItem = store.addItem(conflict.listId, conflict.line);
-        if (tally.lastItem) tally.added++;
-      } else if (action === 'replace') {
-        store.replaceItem(conflict.listId, existing.id, conflict.line);
-        tally.replaced++;
-      } else {
-        tally.skipped++;
-      }
+      /* Pasting a whole note can hit the same answer a dozen times over. */
+      if (applyAll && applyAll.checked) tally.applyToAll = action;
+      resolveConflict(conflict.listId, conflict.line, existing, action, tally);
       closeDialog();
       setTimeout(conflict.onDone, 10);
     }
 
     var newCategory = cats.categorize(parsed.name, store.getState().learned);
+    var remaining = conflict.total - conflict.position + 1;
 
     var body = h('div', {}, [
       h('div', { class: 'compare' }, [
@@ -732,7 +746,11 @@
         choiceRow('➕', 'dupe.add', 'dupe.addDesc', function () { choose('add'); }),
         choiceRow('🔄', 'dupe.replace', 'dupe.replaceDesc', function () { choose('replace'); }),
         choiceRow('🚫', 'dupe.skip', 'dupe.skipDesc', function () { choose('skip'); })
-      ])
+      ]),
+      remaining > 1 ? h('label', { class: 'field', style: 'display:flex;gap:9px;align-items:center;margin:14px 2px 0' }, [
+        applyAll = h('input', { type: 'checkbox' }),
+        h('span', { text: t('dupe.applyAll') })
+      ]) : null
     ]);
 
     openDialog({
@@ -1128,6 +1146,13 @@
     });
   }
 
+  /* Plain text with several lines and no JSON punctuation around it. */
+  function looksLikeNote(text) {
+    var trimmed = String(text || '').trim();
+    if (!trimmed || trimmed.charAt(0) === '{' || trimmed.charAt(0) === '[') return false;
+    return notes.parse(trimmed).lines.length > 1;
+  }
+
   function importDialog() {
     var file = h('input', { class: 'input', type: 'file', accept: '.json,application/json' });
     var area = h('textarea', { class: 'textarea', placeholder: t('import.pastePlaceholder') });
@@ -1138,6 +1163,14 @@
         closeDialog();
         toast(t('import.done', { count: plural(count, 'list') }));
       } catch (err) {
+        /* A pasted note is the likeliest mistake here - hand it to the
+           importer that can actually read it, rather than refusing. */
+        if (looksLikeNote(text)) {
+          closeDialog();
+          toast(t('import.looksLikeNote'));
+          setTimeout(function () { noteImportDialog({ text: text }); }, 400);
+          return;
+        }
         toast(err.message || t('import.failed'));
       }
     }

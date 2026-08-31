@@ -55,7 +55,16 @@ text. Two ways in, both under **⋯ → Import from a note**:
 
 Either way the items land in a new list or an existing one, and they go through
 the usual categorisation, quantity parsing (`3 גרביים`) and duplicate prompt on
-the way in.
+the way in. A real note is messy, so the parser also drops bullets with nothing
+after them, and treats a line crossed out with `~~tildes~~` as done — it comes
+in packed, like a ticked box.
+
+When a whole note lands on a list that already has some of it, the duplicate
+prompt offers **do the same for the rest of this import**, so one answer settles
+every remaining clash instead of asking a dozen times.
+
+Pasting a note into the backup importer by mistake does not fail with a JSON
+error: the text is recognised as a note and handed to the note importer.
 
 ## Items that come in a quantity
 

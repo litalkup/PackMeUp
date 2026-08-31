@@ -15,6 +15,8 @@
   var CHECKBOX = /^[-*•·‣▪–—]?[ \t]*\[([^\]]?)\][ \t]*(.*)$/;
   var SYMBOL = /^([☐☑☒✅✔✓✗✘⬜✅])[ \t]*(.*)$/;
   var BULLET = /^[-*•·‣▪–—][ \t]+(.*)$/;
+  var STRUCK = /^~~([\s\S]*?)~~$/;              /* a crossed-out line in Keep */
+  var MARKS_ONLY = /^[-*•·‣▪–—~_+=.\s]*$/;      /* a bullet with nothing after it */
   var TICKED = 'xXvV✓✔☑☒✅✗✘';
 
   function isTicked(mark) {
@@ -27,6 +29,9 @@
       .replace(/[ ‎‏‪-‮]/g, ' ')   /* nbsp, bidi marks */
       .trim();
     if (!text) return null;
+
+    /* "* " on its own is spacing in the note, not an item. */
+    if (MARKS_ONLY.test(text)) return null;
 
     var packed = false;
     var marked = false;
@@ -46,7 +51,15 @@
     }
 
     text = text.trim();
-    if (!text) return null;
+
+    /* Crossed out with ~~ means it is dealt with, same as a ticked box. */
+    if ((match = text.match(STRUCK))) {
+      text = match[1].trim();
+      packed = true;
+      marked = true;
+    }
+
+    if (!text || MARKS_ONLY.test(text)) return null;
     return { text: text, packed: packed, marked: marked };
   }
 

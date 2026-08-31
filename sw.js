@@ -4,7 +4,7 @@
  * Caches the app shell so the app opens with no connection at all. Your data
  * never goes through here - it lives in localStorage on the device.
  */
-var CACHE = 'packmeup-v3';
+var CACHE = 'packmeup-v4';
 
 var SHELL = [
   './',
@@ -44,24 +44,31 @@ self.addEventListener('activate', function (event) {
   );
 });
 
-/* Cache first, then refresh the cached copy in the background. */
+/*
+ * Network first, cache as the fallback.
+ *
+ * The cache used to answer first, which meant a published change only showed
+ * up on the second visit - once for the new files to be fetched into the
+ * cache, again to be served from it. Going to the network first keeps the app
+ * current whenever there is a connection, and the cache still answers in full
+ * when there is none.
+ */
 self.addEventListener('fetch', function (event) {
   var request = event.request;
   if (request.method !== 'GET') return;
   if (new URL(request.url).origin !== self.location.origin) return;
 
   event.respondWith(
-    caches.match(request).then(function (cached) {
-      var network = fetch(request).then(function (response) {
-        if (response && response.status === 200 && response.type === 'basic') {
-          var copy = response.clone();
-          caches.open(CACHE).then(function (cache) { cache.put(request, copy); });
-        }
-        return response;
-      }).catch(function () {
+    fetch(request).then(function (response) {
+      if (response && response.status === 200 && response.type === 'basic') {
+        var copy = response.clone();
+        caches.open(CACHE).then(function (cache) { cache.put(request, copy); });
+      }
+      return response;
+    }).catch(function () {
+      return caches.match(request).then(function (cached) {
         return cached || caches.match('index.html');
       });
-      return cached || network;
     })
   );
 });

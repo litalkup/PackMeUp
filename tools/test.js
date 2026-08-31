@@ -64,6 +64,12 @@ check('hebrew phrase with prefix: לתיק גב -> gear', cats.categorize('לת�
 check('prefix letters are not stripped off keywords', cats.categorize('מגבת'), 'toiletries');
 check('mixed languages in one list', cats.categorize('3 גרביים'), cats.categorize('3 socks'));
 check('unknown -> misc', cats.categorize('flux capacitor'), 'misc');
+check('וולטרן -> health', cats.categorize('וולטרן'), 'health');
+check('נססר -> toiletries', cats.categorize('כלי רחצה - נססר ירוק'), 'toiletries');
+check('קרדיגן -> clothing', cats.categorize('קרדיגן'), 'clothing');
+check('פיט ביט -> electronics', cats.categorize('מטען פיט ביט'), 'electronics');
+check('טייץ -> clothing', cats.categorize('טייץ'), 'clothing');
+check('עדשות -> toiletries', cats.categorize('עדשות חדפ'), 'toiletries');
 check('user correction wins', cats.categorize('umbrella', { umbrella: 'clothing' }), 'clothing');
 
 console.log('quantity parsing');
@@ -182,6 +188,13 @@ check('markdown unticked state', markdown.lines[1].packed, false);
 check('bullets are stripped', markdown.lines[2].text, 'Toothbrush');
 check('bullet lines are not packed', markdown.lines[3].packed, false);
 
+var struck = notes.parse('* ~~סבון גוף ~~\n* ~~מקלחת~~\n* שמפו');
+check('a crossed-out line arrives packed', struck.lines[0].packed, true);
+check('and loses its ~~ markers', struck.lines[0].text, 'סבון גוף');
+check('a line beside it is untouched', struck.lines[2].packed, false);
+check('a bullet with nothing after it is not an item',
+  notes.parse('* כובע\n* \n*\n---\n* מגבת').lines.length, 2);
+
 var plainNote = notes.parse('Passport\nSocks\nToothbrush');
 check('a note with no markers keeps every line', plainNote.lines.length, 3);
 check('and takes no title from it', plainNote.title, null);
@@ -212,6 +225,9 @@ check('an extra word makes a different item', store.sameItemName('wool socks', '
 check('charger is not a power bank', store.sameItemName('מטען', 'מטען נייד'), false);
 check('unrelated items', store.sameItemName('phone charger', 'power bank'), false);
 check('short words are not typo-matched', store.sameItemName('hat', 'bat'), false);
+/* Peeling a prefix off both words let unrelated ones meet on a shared tail. */
+check('שישי is not שלישי', store.sameItemName('שישי', 'שלישי'), false);
+check('a prefix on one side still matches', store.sameItemName('הכובע', 'כובע'), true);
 
 var dupeList = store.createList({ name: 'dupes', templateId: 'blank' });
 store.addItem(dupeList.id, '3 socks');
