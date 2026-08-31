@@ -66,6 +66,7 @@
       version: SCHEMA_VERSION,
       lists: [],
       learned: {},                       /* item name -> category chosen by the user */
+      categories: [],                    /* categories the user added */
       removedLists: {},                  /* list id -> when it was deleted */
       settings: { theme: 'system', lang: null, hidePacked: false }
     };
@@ -74,6 +75,12 @@
   function migrate(raw) {
     var data = Object.assign(defaults(), raw || {});
     data.removedLists = data.removedLists || {};
+    /* Register the user's own categories before items are read, so an item
+       filed under one is not mistaken for an item with no category. */
+    data.categories = (data.categories || []).filter(function (c) {
+      return c && c.id && c.label;
+    });
+    cat.setCustom(data.categories);
     data.lists = (data.lists || []).map(function (list) {
       var listUpdated = list.updatedAt || list.createdAt || now();
       return {
@@ -85,7 +92,7 @@
         updatedAt: listUpdated,
         /* item id -> when it was deleted, so a merge does not resurrect it */
         removed: list.removed || {},
-        items: (list.items || []).map(function (item) {
+        items: (list.items || []).map(function (item, index) {
           var qty = item.qty > 0 ? item.qty : 1;
           /* Lists saved before quantities could be part-packed carry a
              boolean; a ticked item means every one of them is in the bag. */
@@ -99,6 +106,9 @@
             category: cat.get(item.category).id,
             packedQty: Math.max(0, Math.min(qty, Math.round(done) || 0)),
             note: item.note || '',
+            /* Position inside its category. A number rather than the place in
+               the array, so a reorder on one device reaches the other. */
+            order: typeof item.order === 'number' ? item.order : index,
             updatedAt: item.updatedAt || listUpdated
           };
         })
@@ -214,6 +224,7 @@
       category: cat.categorize(parsed.name, state.learned),
       packedQty: linePacked(line) ? parsed.qty : 0,
       note: '',
+      order: 0,
       updatedAt: now()
     };
   }
@@ -320,6 +331,7 @@
     lines.forEach(function (line) {
       var item = makeItem(line);
       if (!item) return;
+      item.order = nextOrder(list);
       list.items.push(item);
       added.push(item);
     });
@@ -332,6 +344,12 @@
 
   function addItem(listId, line) {
     return addItems(listId, [line])[0] || null;
+  }
+
+  function nextOrder(list) {
+    return list.items.reduce(function (top, item) {
+      return Math.max(top, typeof item.order === 'number' ? item.order : 0);
+    }, -1) + 1;
   }
 
   function getItem(list, itemId) {
@@ -422,6 +440,39 @@
     checkpoint('Removed "' + item.name + '"');
     list.items = list.items.filter(function (i) { return i.id !== itemId; });
     forget(list, itemId);
+    commit();
+    return item;
+  }
+
+  /* ---------------------------------------------------------- ordering */
+
+  /* The items of one category, in the order they are shown. */
+  function inCategory(list, categoryId) {
+    return list.items.filter(function (item) { return item.category === categoryId; })
+      .sort(function (a, b) { return a.order - b.order; });
+  }
+
+  /*
+   * Moves an item one place up or down inside its own category. Categories
+   * keep their own order, so an item never jumps out of its group.
+   */
+  function moveItem(listId, itemId, direction) {
+    var list = getList(listId);
+    if (!list) return null;
+    var item = getItem(list, itemId);
+    if (!item) return null;
+
+    var siblings = inCategory(list, item.category);
+    var at = siblings.indexOf(item);
+    var swapWith = siblings[at + (direction < 0 ? -1 : 1)];
+    if (!swapWith) return null;
+
+    var mine = item.order;
+    item.order = swapWith.order;
+    swapWith.order = mine;
+    item.updatedAt = now();
+    swapWith.updatedAt = now();
+    touch(list);
     commit();
     return item;
   }
@@ -587,11 +638,61 @@
     items.forEach(function (item) {
       (buckets[item.category] = buckets[item.category] || []).push(item);
     });
+    Object.keys(buckets).forEach(function (id) {
+      buckets[id].sort(function (a, b) { return (a.order || 0) - (b.order || 0); });
+    });
     return cat.all
       .filter(function (c) { return buckets[c.id] && buckets[c.id].length; })
       .map(function (c) {
         return { category: c, items: buckets[c.id] };
       });
+  }
+
+  /* ------------------------------------------------------ categories */
+
+  function getCategories() { return state.categories; }
+
+  function addCategory(label, icon) {
+    var name = String(label || '').trim();
+    if (!name) return null;
+    var category = { id: 'c-' + uid(), label: name, icon: icon || '📦' };
+    state.categories.push(category);
+    cat.setCustom(state.categories);
+    commit();
+    return category;
+  }
+
+  function updateCategory(id, changes) {
+    var category = state.categories.filter(function (c) { return c.id === id; })[0];
+    if (!category) return null;
+    if (changes.label !== undefined) category.label = String(changes.label).trim() || category.label;
+    if (changes.icon !== undefined) category.icon = changes.icon;
+    cat.setCustom(state.categories);
+    commit();
+    return category;
+  }
+
+  /* Removing a category leaves its items behind, under "Other". */
+  function deleteCategory(id) {
+    var category = state.categories.filter(function (c) { return c.id === id; })[0];
+    if (!category) return null;
+    checkpoint('Removed category');
+    state.categories = state.categories.filter(function (c) { return c.id !== id; });
+    state.lists.forEach(function (list) {
+      list.items.forEach(function (item) {
+        if (item.category !== id) return;
+        item.category = 'misc';
+        delete item.categoryPinned;
+        item.updatedAt = now();
+        touch(list);
+      });
+    });
+    Object.keys(state.learned).forEach(function (key) {
+      if (state.learned[key] === id) delete state.learned[key];
+    });
+    cat.setCustom(state.categories);
+    commit();
+    return category;
   }
 
   /* ------------------------------------------------------------- settings */
@@ -613,6 +714,7 @@
       version: SCHEMA_VERSION,
       exportedAt: now(),
       lists: state.lists,
+      categories: state.categories,
       removedLists: state.removedLists,
       learned: state.learned
     }, null, 2);
@@ -753,6 +855,13 @@
     Object.keys(incoming.learned || {}).forEach(function (key) {
       state.learned[key] = incoming.learned[key];
     });
+
+    var known = {};
+    state.categories.forEach(function (c) { known[c.id] = true; });
+    (incoming.categories || []).forEach(function (c) {
+      if (c && c.id && c.label && !known[c.id]) state.categories.push(c);
+    });
+    cat.setCustom(state.categories);
     return summary;
   }
 
@@ -775,11 +884,13 @@
     checkpoint('Imported lists');
     var prepared = migrate({
       lists: incoming,
+      categories: (state.categories || []).concat(data.categories || []),
       removedLists: data.removedLists,
       learned: data.learned
     });
     var summary = mergeState({
       lists: prepared.lists,
+      categories: data.categories,
       removedLists: prepared.removedLists,
       learned: prepared.learned
     });
@@ -819,6 +930,12 @@
 
     stats: stats,
     groupByCategory: groupByCategory,
+    moveItem: moveItem,
+    inCategory: inCategory,
+    getCategories: getCategories,
+    addCategory: addCategory,
+    updateCategory: updateCategory,
+    deleteCategory: deleteCategory,
     parseLine: parseLine,
     lineText: lineText,
 

@@ -19,6 +19,14 @@ opens in any browser on a computer. No account, no server, works with no signal.
   name and notes.
 - **Automatic categories** — items are sorted into segments as you type them.
   Change a category by hand once and PackMeUp remembers that choice for next time.
+- **Your own categories** — add one from the item dialog or from **⋯ →
+  Categories**, with a name and an icon of your choosing. They sit alongside
+  the built-in ones, just before *Other*, and travel with a sync. Deleting one
+  leaves its items behind under *Other*, and is undoable.
+- **Order inside a category** — **list menu → Reorder items** puts arrows on
+  every row. An item moves within its own category only, so it never jumps out
+  of its group, and the order is stored per item, so it reaches your other
+  device too.
 - **Tick as you pack** — a checkbox per item, a progress bar per list and per
   category, and a "to pack / packed" filter.
 - **Quantities you can count off one at a time** — type `3 x socks` (or

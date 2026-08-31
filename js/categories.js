@@ -229,8 +229,35 @@
     ]
   };
 
+  var BUILT_IN = CATEGORIES.slice();
   var CATEGORY_BY_ID = {};
-  CATEGORIES.forEach(function (c, i) { CATEGORY_BY_ID[c.id] = c; c.order = i; });
+
+  /*
+   * Categories the user adds live in the store, not here, but they have to
+   * take part in grouping and ordering like any other. Registering them
+   * rebuilds the shared list in place - callers hold on to `all`, so it is
+   * mutated rather than replaced - and keeps "Other" last, where a category
+   * that means "none of the above" belongs.
+   */
+  function setCustom(customs) {
+    var misc = BUILT_IN.filter(function (c) { return c.id === 'misc'; });
+    var ordered = BUILT_IN.filter(function (c) { return c.id !== 'misc'; })
+      .concat((customs || []).map(function (c) {
+        return { id: c.id, label: c.label, icon: c.icon || '📦', custom: true };
+      }))
+      .concat(misc);
+
+    CATEGORIES.length = 0;
+    CATEGORY_BY_ID = {};
+    ordered.forEach(function (category, index) {
+      category.order = index;
+      CATEGORIES.push(category);
+      CATEGORY_BY_ID[category.id] = category;
+    });
+    return CATEGORIES;
+  }
+
+  setCustom([]);
 
   var HEBREW = /[֐-׿]/;
   var HEBREW_PREFIXES = 'ובלכמשה';   /* only stripped from what the user types */
@@ -432,12 +459,16 @@
     return out;
   }
 
-  /* Display name in the current language, falling back to English. */
+  /* Display name in the current language. A category the user made carries
+     the name they typed, in whatever language they typed it. */
   function label(id) {
     var category = get(id);
+    if (category.custom) return category.label;
     var i18n = global.PMU && global.PMU.i18n;
     return i18n ? i18n.t('cat.' + category.id) : category.label;
   }
+
+  function isCustom(id) { return !!get(id).custom; }
 
   global.PMU = global.PMU || {};
   global.PMU.categories = {
@@ -447,6 +478,8 @@
     categorize: categorize,
     normalize: normalize,
     stem: stem,
-    forms: forms
+    forms: forms,
+    setCustom: setCustom,
+    isCustom: isCustom
   };
 })(window);

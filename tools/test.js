@@ -276,6 +276,68 @@ check('english labels come back', cats.label('clothing'), 'Clothing');
 check('templates keep both languages',
   templates.localized(templates.get('travel').name, 'he'), 'טיול בחו״ל');
 
+console.log('categories you add, and the order inside one');
+var photo = store.addCategory('Photo gear', '📷');
+check('a category is created', !!photo && !!photo.id, true);
+check('it carries the name you typed', cats.label(photo.id), 'Photo gear');
+check('it is marked as yours', cats.isCustom(photo.id), true);
+check('a built-in one is not', cats.isCustom('clothing'), false);
+check('it joins the grouping order before Other',
+  cats.all[cats.all.length - 1].id, 'misc');
+check('and it sits just before it', cats.all[cats.all.length - 2].id, photo.id);
+
+var shoot = store.createList({ name: 'Shoot', templateId: 'blank' });
+store.addItems(shoot.id, ['camera', 'lens', 'tripod']);
+var shots = store.getList(shoot.id).items;
+shots.forEach(function (item) { store.setItemCategory(shoot.id, item.id, photo.id); });
+function orderOf() {
+  return store.inCategory(store.getList(shoot.id), photo.id)
+    .map(function (i) { return i.name; }).join(',');
+}
+check('items start in the order they were added', orderOf(), 'camera,lens,tripod');
+
+store.moveItem(shoot.id, shots[2].id, -1);
+check('one step up', orderOf(), 'camera,tripod,lens');
+store.moveItem(shoot.id, shots[2].id, -1);
+check('another step up', orderOf(), 'tripod,camera,lens');
+check('it will not move past the top', store.moveItem(shoot.id, shots[2].id, -1), null);
+store.moveItem(shoot.id, shots[2].id, 1);
+check('and back down again', orderOf(), 'camera,tripod,lens');
+
+/* A new item is categorised automatically, so it has to be filed here first. */
+var flash = store.addItem(shoot.id, 'flash');
+store.setItemCategory(shoot.id, flash.id, photo.id);
+check('a new item lands at the end', orderOf(), 'camera,tripod,lens,flash');
+check('the order groups the same way',
+  store.groupByCategory(store.getList(shoot.id).items).filter(function (g) {
+    return g.category.id === photo.id;
+  })[0].items.map(function (i) { return i.name; }).join(','), 'camera,tripod,lens,flash');
+
+/* An item only ever moves within its own category. */
+store.setItemCategory(shoot.id, shots[0].id, 'gear');
+check('moving one out leaves the rest in order', orderOf(), 'tripod,lens,flash');
+
+/* Categories and order travel to another device. */
+var withCats = store.exportAll();
+check('the export carries your categories',
+  JSON.parse(withCats).categories.filter(function (c) { return c.id === photo.id; }).length, 1);
+check('and the order of each item',
+  typeof JSON.parse(withCats).lists[0].items[0].order, 'number');
+
+store.updateCategory(photo.id, { label: 'Camera kit', icon: '🎥' });
+check('renaming shows through', cats.label(photo.id), 'Camera kit');
+
+store.deleteCategory(photo.id);
+check('deleting it frees the items', store.getList(shoot.id).items.filter(function (i) {
+  return i.category === photo.id; }).length, 0);
+check('which land under Other', store.getList(shoot.id).items.filter(function (i) {
+  return i.category === 'misc'; }).length, 3);
+check('and it leaves the category list', cats.all.filter(function (c) {
+  return c.id === photo.id; }).length, 0);
+check('deleting a category can be undone', typeof store.undo(), 'string');
+check('the items come back to it', store.getList(shoot.id).items.filter(function (i) {
+  return i.category === photo.id; }).length, 3);
+
 console.log('merging two devices');
 /* Device A makes a list and ticks something. */
 var deviceA = store.createList({ name: 'Copenhagen', templateId: 'blank' });

@@ -339,6 +339,26 @@ html[data-theme='dark'] .template[aria-pressed='true'] { background: var(--brand
 
 .items { list-style: none; margin: 0; padding: 0 0 4px; }
 
+/* Reordering: a banner while the mode is on, and arrows on every row. */
+.reorder-bar {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 12px; padding: 9px 12px;
+  border: 1px solid var(--brand); border-radius: var(--radius);
+  background: var(--brand-soft); color: var(--brand-strong);
+  font-size: 13.5px; font-weight: 600;
+}
+.reorder-bar span { flex: 1 1 auto; }
+
+.item__move { flex: 0 0 auto; display: flex; gap: 2px; }
+.move {
+  width: 32px; height: 32px; display: grid; place-items: center;
+  border: 1px solid var(--border-strong); border-radius: 8px;
+  background: var(--bg-elevated); color: var(--text-muted); font-size: 14px;
+}
+.move:hover:not(:disabled) { background: var(--surface-hover); color: var(--text); }
+.move:active:not(:disabled) { transform: scale(.92); }
+.move:disabled { opacity: .35; }
+
 .item {
   display: flex; align-items: center; gap: 11px;
   padding: 9px 13px; border-top: 1px solid var(--border);

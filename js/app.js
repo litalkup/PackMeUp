@@ -22,11 +22,15 @@
   var ICONS = ['🧳', '✈️', '🪖', '⛺', '🏖️', '💼', '🏋️', '🧸', '🚗', '🚲', '🎒',
                '🏔️', '🛶', '🎿', '🎪', '🎓', '🏥', '🏡', '🎉', '📦'];
 
+  var CATEGORY_ICONS = ['📦', '📷', '🎨', '🎸', '📚', '🔧', '🎣', '🎿', '🐾', '🧷',
+                        '🍼', '🏄', '⚽', '🛠️', '💡', '🧯', '🗺️', '🎧', '🪥', '🧳'];
+
   var THEMES = ['system', 'light', 'dark'];
 
   var ui = {
     route: { view: 'home', listId: null },
     listFilter: 'all',
+    reordering: false,
     listQuery: '',
     homeQuery: '',
     collapsed: {}          /* listId -> { categoryId: true } */
@@ -246,6 +250,7 @@
     if (changedList) {
       ui.listFilter = 'all';
       ui.listQuery = '';
+      ui.reordering = false;
       var search = $('list-search');
       if (search) search.value = '';
     }
@@ -463,6 +468,17 @@
       chip.setAttribute('aria-pressed', chip.dataset.filter === ui.listFilter ? 'true' : 'false');
     });
 
+    var banner = $('reorder-bar');
+    banner.hidden = !ui.reordering;
+    if (ui.reordering) {
+      clear(banner);
+      banner.appendChild(h('span', { text: t('reorder.on') }));
+      banner.appendChild(h('button', {
+        class: 'btn btn--sm', type: 'button', text: t('reorder.done'),
+        onclick: function () { ui.reordering = false; renderList(); }
+      }));
+    }
+
     var groupsEl = $('list-groups');
     clear(groupsEl);
     var items = visibleItems(list);
@@ -539,13 +555,16 @@
         h('span', { class: 'group__count', text: packed + '/' + group.items.length }),
         h('span', { class: 'group__chevron', text: '▾', 'aria-hidden': 'true' })
       ]),
-      h('ul', { class: 'items' }, group.items.map(function (item) {
-        return itemRow(list, item);
+      h('ul', { class: 'items' }, group.items.map(function (item, index) {
+        return itemRow(list, item, {
+          first: index === 0,
+          last: index === group.items.length - 1
+        });
       }))
     ]);
   }
 
-  function itemRow(list, item) {
+  function itemRow(list, item, position) {
     var packed = store.isPacked(item);
     var left = item.qty - item.packedQty;
     var partly = !packed && item.packedQty > 0;
@@ -563,7 +582,24 @@
           text: left === 1 ? t('count.leftOne') : t('count.leftMany', { n: left })
         }) : null,
         item.note ? h('span', { class: 'item__note', text: item.note, dir: 'auto' }) : null
-      ])
+      ]),
+      ui.reordering ? moveControls(list, item, position) : null
+    ]);
+  }
+
+  /* Shown only while reordering, so an ordinary row stays uncluttered. */
+  function moveControls(list, item, position) {
+    function arrow(symbol, direction, labelKey, disabled) {
+      return h('button', {
+        class: 'move', type: 'button', disabled: disabled || null,
+        'aria-label': t(labelKey, { name: item.name }),
+        text: symbol,
+        onclick: function () { store.moveItem(list.id, item.id, direction); }
+      });
+    }
+    return h('span', { class: 'item__move' }, [
+      arrow('↑', -1, 'item.moveUp', position.first),
+      arrow('↓', 1, 'item.moveDown', position.last)
     ]);
   }
 
@@ -853,6 +889,16 @@
     var menu = h('div', { class: 'menu' }, [
       menuEntry('📄', t('menu.duplicate'), function () { duplicateDialog(listId); }),
       menuEntry('✏️', t('menu.rename'), function () { renameDialog(listId); }),
+      menuEntry('🔀', t('menu.reorder'), function () {
+        /* Reachable from the home screen too, where the list is not open yet. */
+        if (ui.route.listId !== listId) {
+          navigate('#/list/' + listId);
+          setTimeout(function () { ui.reordering = true; renderList(); }, 30);
+          return;
+        }
+        ui.reordering = true;
+        renderList();
+      }),
       menuEntry('🗂️', t('menu.recategorize'), function () {
         store.recategorize(listId);
         undoable(t('toast.recategorized'));
@@ -1024,8 +1070,18 @@
     });
     var select = h('select', { class: 'select' }, cats.all.map(function (c) {
       return h('option', { value: c.id, text: c.icon + '  ' + cats.label(c.id) });
-    }));
+    }).concat([h('option', { value: '__new__', text: t('cats.newOption') })]));
     select.value = item.category;
+    select.addEventListener('change', function () {
+      if (select.value !== '__new__') return;
+      select.value = item.category;
+      newCategoryDialog(function (category) {
+        /* Rebuild the options so the new one can be chosen. */
+        itemDialog(listId, itemId);
+        var reopened = $('dialog-body').querySelector('select');
+        if (reopened) reopened.value = category.id;
+      });
+    });
     var note = h('input', { class: 'input', type: 'text', dir: 'auto',
                             placeholder: t('item.notePlaceholder') });
     note.value = item.note || '';
@@ -1080,6 +1136,161 @@
               store.setItemCategory(listId, itemId, select.value);
             }
             toast(t('toast.saved'));
+          }
+        }
+      ]
+    });
+  }
+
+  function newCategoryDialog(onCreated) {
+    var chosenIcon = CATEGORY_ICONS[0];
+    var nameInput = h('input', {
+      class: 'input', type: 'text', id: 'cat-name', dir: 'auto',
+      placeholder: t('cats.namePlaceholder')
+    });
+
+    var picker = h('div', { class: 'icon-picker' });
+    CATEGORY_ICONS.forEach(function (icon) {
+      var button = h('button', {
+        type: 'button', text: icon, 'aria-label': t('rename.iconAria', { icon: icon }),
+        'aria-pressed': icon === chosenIcon ? 'true' : 'false',
+        onclick: function () {
+          chosenIcon = icon;
+          Array.prototype.forEach.call(picker.children, function (child) {
+            child.setAttribute('aria-pressed', child === button ? 'true' : 'false');
+          });
+        }
+      });
+      picker.appendChild(button);
+    });
+
+    openDialog({
+      title: t('cats.add'),
+      focus: '#cat-name',
+      body: h('div', {}, [
+        h('label', { class: 'field' }, [
+          h('span', { class: 'field__label', text: t('cats.name') }),
+          nameInput
+        ]),
+        h('div', { class: 'field' }, [
+          h('span', { class: 'field__label', text: t('cats.icon') }),
+          picker
+        ])
+      ]),
+      actions: [
+        { label: t('action.cancel') },
+        {
+          label: t('cats.create'), variant: 'primary',
+          onClick: function () {
+            var category = store.addCategory(nameInput.value, chosenIcon);
+            if (!category) return false;
+            toast(t('cats.added'));
+            if (onCreated) setTimeout(function () { onCreated(category); }, 10);
+          }
+        }
+      ]
+    });
+  }
+
+  function categoriesDialog() {
+    var mine = store.getCategories();
+    var counts = {};
+    store.getLists().forEach(function (list) {
+      list.items.forEach(function (item) {
+        counts[item.category] = (counts[item.category] || 0) + 1;
+      });
+    });
+
+    var rows = mine.map(function (category) {
+      return h('div', { class: 'menu__item menu__item--stack' }, [
+        h('span', { class: 'menu__icon', text: category.icon, 'aria-hidden': 'true' }),
+        h('span', { class: 'menu__body' }, [
+          h('span', { text: category.label, dir: 'auto' }),
+          h('span', { class: 'menu__desc',
+                      text: t('cats.itemCount', { count: counts[category.id] || 0 }) })
+        ]),
+        h('button', {
+          class: 'icon-btn', type: 'button', text: '✏️',
+          'aria-label': t('menu.rename'),
+          onclick: function () { renameCategoryDialog(category); }
+        }),
+        h('button', {
+          class: 'icon-btn', type: 'button', text: '🗑️',
+          'aria-label': t('action.delete'),
+          onclick: function () {
+            confirmDialog({
+              title: t('cats.deleteTitle', { name: category.label }),
+              message: t('cats.deleteBody'),
+              onConfirm: function () {
+                store.deleteCategory(category.id);
+                undoable(t('cats.deleted'));
+              }
+            });
+          }
+        })
+      ]);
+    });
+
+    openDialog({
+      title: t('cats.title'),
+      body: h('div', {}, [
+        h('div', { class: 'field__label', text: t('cats.yours') }),
+        mine.length
+          ? h('div', { class: 'menu' }, rows)
+          : h('p', { class: 'field__hint', style: 'margin:0 0 12px', text: t('cats.none') }),
+        h('div', { class: 'menu' }, [
+          menuEntry('➕', t('cats.add'), function () {
+            newCategoryDialog(function () { categoriesDialog(); });
+          })
+        ]),
+        h('p', { class: 'field__hint', style: 'margin:10px 2px 0',
+                 text: t('cats.builtIn', { count: cats.all.length - mine.length }) })
+      ]),
+      actions: [{ label: t('action.close') }]
+    });
+  }
+
+  function renameCategoryDialog(category) {
+    var nameInput = h('input', { class: 'input', type: 'text', id: 'cat-rename', dir: 'auto' });
+    nameInput.value = category.label;
+    var chosenIcon = category.icon;
+
+    var picker = h('div', { class: 'icon-picker' });
+    CATEGORY_ICONS.forEach(function (icon) {
+      var button = h('button', {
+        type: 'button', text: icon, 'aria-label': t('rename.iconAria', { icon: icon }),
+        'aria-pressed': icon === chosenIcon ? 'true' : 'false',
+        onclick: function () {
+          chosenIcon = icon;
+          Array.prototype.forEach.call(picker.children, function (child) {
+            child.setAttribute('aria-pressed', child === button ? 'true' : 'false');
+          });
+        }
+      });
+      picker.appendChild(button);
+    });
+
+    openDialog({
+      title: t('menu.rename'),
+      focus: '#cat-rename',
+      body: h('div', {}, [
+        h('label', { class: 'field' }, [
+          h('span', { class: 'field__label', text: t('cats.name') }),
+          nameInput
+        ]),
+        h('div', { class: 'field' }, [
+          h('span', { class: 'field__label', text: t('cats.icon') }),
+          picker
+        ])
+      ]),
+      actions: [
+        { label: t('action.cancel'), onClick: function () { setTimeout(categoriesDialog, 10); } },
+        {
+          label: t('action.save'), variant: 'primary',
+          onClick: function () {
+            store.updateCategory(category.id, { label: nameInput.value, icon: chosenIcon });
+            toast(t('toast.saved'));
+            setTimeout(categoriesDialog, 10);
           }
         }
       ]
@@ -1450,6 +1661,7 @@
     var theme = store.getSetting('theme') || 'system';
     var menu = h('div', { class: 'menu' }, [
       menuEntry('➕', t('menu.newList'), newListDialog),
+      menuEntry('🗂️', t('cats.menu'), categoriesDialog),
       menuEntry('☁️', t('drive.menu'), driveDialog),
       menuEntry('📋', t('note.menu'), function () { noteImportDialog(null); }),
       menuEntry('📥', t('menu.import'), importDialog),
